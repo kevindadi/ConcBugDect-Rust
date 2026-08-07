@@ -1,5 +1,0 @@
-=== Petri net connectivity diagnostics ===
-Totals: 18 places, 13 transitions
-
-Warnings (1):
-  - Place 'panic::panic_macro_end' (id=7) has no input arcs and initial marking 0 (never activated)

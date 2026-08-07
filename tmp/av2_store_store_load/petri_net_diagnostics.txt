@@ -1,7 +1,0 @@
-=== Petri net connectivity diagnostics ===
-Totals: 29 places, 14 transitions
-
-Warnings (3):
-  - Place 'seg_t164_s2' (id=15) has no output arcs (sink); verify this is intended
-  - Place 'seg_t165_s1' (id=19) has no output arcs (sink); verify this is intended
-  - Place 'seg_t166_s1' (id=27) has no output arcs (sink); verify this is intended
