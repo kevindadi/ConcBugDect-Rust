@@ -1,0 +1,30 @@
+{
+  "crate_name": "recursive_no_deadlock",
+  "mode": "deadlock",
+  "reduced": true,
+  "metrics": {
+    "callable_functions": 48,
+    "places": 13,
+    "transitions": 10,
+    "state_classes": 10,
+    "state_edges": 10,
+    "deadlock_states": 1,
+    "truncated": false,
+    "net_construct_time_ms": 4,
+    "net_reduce_time_ms": 0,
+    "state_graph_build_time_ms": 0
+  },
+  "artifacts": {
+    "callgraph_dot": "callgraph.dot",
+    "petrinet_dot": "petrinet.dot",
+    "petrinet_raw_dot": "petrinet_raw.dot",
+    "petrinet_reduce_1_loop_dot": "petrinet_reduce_1_loop.dot",
+    "petrinet_reduce_2_sequence_dot": "petrinet_reduce_2_sequence.dot",
+    "petrinet_reduce_3_intermediate_dot": "petrinet_reduce_3_intermediate.dot",
+    "stategraph_dot": "stategraph.dot",
+    "deadlock_report": "deadlock_report.txt",
+    "datarace_report": "datarace_report.txt",
+    "atomicity_report": "atomicity_report.txt",
+    "points_to_report": "points_to_report.txt"
+  }
+}

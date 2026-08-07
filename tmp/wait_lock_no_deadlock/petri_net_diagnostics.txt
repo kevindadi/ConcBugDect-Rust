@@ -1,0 +1,6 @@
+=== Petri net connectivity diagnostics ===
+Totals: 9 places, 5 transitions
+
+Isolated places (1):
+  [5] Mutex_1
+

@@ -1,0 +1,40 @@
+====================== RustPTA Bug Report ======================
+
+Result        : BUG FOUND
+Mode          : atomic
+Bug count     : 1
+Severity      : medium
+Confidence    : medium
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.002 s
+
+Developer explanation:
+  At least one atomic load is reachable with multiple competing stores.
+
+--------------------- Incident atomicity-1 ---------------------
+
+What happened:
+  A load can observe an atomic variable after multiple competing stores under the modeled ordering constraints.
+
+Where to look:
+  1. src/main.rs:10:21                load@tid31 AliasId { instance_id: NodeIndex(31), local: _3, array_index: None, field: None }
+  2. src/main.rs:17:9                 store@tid30 AliasId { instance_id: NodeIndex(31), local: _3, array_index: None, field: None }
+
+Developer explanation:
+  The state graph contains paths where the listed stores can reach the load without a stronger ordering edge that forces a single intended write-before-read relationship.
+
+Candidate atomic pattern:
+  load:
+    - load@tid31 AliasId { instance_id: NodeIndex(31), local: _3, array_index: None, field: None } at src/main.rs:10:21: 10:52 (#0) (SeqCst)
+  competing stores:
+    - store@tid30 AliasId { instance_id: NodeIndex(31), local: _3, array_index: None, field: None } at src/main.rs:17:9: 17:44 (#0) (SeqCst)
+
+Pattern note:
+  state-graph reachability can include operations from alternative branches unless a witness trace is available.
+  why bug: Multiple stores to the same atomic location are compatible with the load under the modeled ordering relation.
+
+Suggested next steps:
+  - Check whether the stores should be mutually exclusive or ordered before the load.
+  - Consider stronger ordering or a separate synchronization edge if the load expects one writer.
+  - Inspect stategraph.dot around the reported atomic load and stores.
+

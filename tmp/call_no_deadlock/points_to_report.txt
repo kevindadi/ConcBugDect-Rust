@@ -1,0 +1,401 @@
+
+=== Points-to Relations for All Functions ===
+
+Points-to relations for "<() as std::process::Termination>::report":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00), std::process::ExitCode))}
+Const(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+ConstDeref(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+----------------------------------------
+
+
+Points-to relations for "<std::sync::MutexGuard<'_, T> as std::ops::Deref>::deref":
+----------------------------------------
+0 → {(*_2), Alloc(_0)}
+1[Deref, Field(0, &'{erased} std::sync::Mutex<T/#1>)] → {Alloc(((*_1).0: &std::sync::Mutex<T>))}
+2[Deref] → {Alloc((*_2)), Alloc(_2), Alloc(_4), Alloc((_3.2: std::cell::UnsafeCell<T>))}
+2 → {Alloc(_2), Alloc(_4), Alloc((*_2)), Alloc((_3.2: std::cell::UnsafeCell<T>))}
+3[Field(2, std::cell::UnsafeCell<T/#1>)] → {Alloc(_3), Alloc((_3.2: std::cell::UnsafeCell<T>)), Alloc(((*_1).0: &std::sync::Mutex<T>))}
+3 → {Alloc((_3.2: std::cell::UnsafeCell<T>)), Alloc(((*_1).0: &std::sync::Mutex<T>)), Alloc(_3)}
+4 → {Alloc(_4), Alloc((_3.2: std::cell::UnsafeCell<T>))}
+----------------------------------------
+
+
+Points-to relations for "<std::sync::MutexGuard<'_, T> as std::ops::Drop>::drop":
+----------------------------------------
+1[Deref, Field(0, &'{erased} std::sync::Mutex<T/#1>)] → {Alloc(((*_1).0: &std::sync::Mutex<T>))}
+1[Deref, Field(1, std::sync::poison::Guard)] → {Alloc(((*_1).1: std::sync::poison::Guard))}
+2 → {((*_6).1: std::sync::poison::Flag), Alloc(_2), ((*_1).1: std::sync::poison::Guard), Alloc(_4), Alloc(_3)}
+3 → {((*_6).1: std::sync::poison::Flag), Alloc(_3)}
+4 → {((*_1).1: std::sync::poison::Guard), Alloc(_4)}
+5 → {((*_7).0: std::sys::sync::mutex::futex::Mutex), Alloc(_5)}
+6[Deref, Field(1, std::sync::poison::Flag)] → {Alloc(((*_1).0: &std::sync::Mutex<T>)), Alloc(_6), Alloc(((*_6).1: std::sync::poison::Flag))}
+6 → {Alloc(((*_1).0: &std::sync::Mutex<T>)), Alloc(_6), Alloc(((*_6).1: std::sync::poison::Flag))}
+7[Deref, Field(0, std::sys::sync::mutex::futex::Mutex)] → {Alloc(((*_7).0: std::sys::sync::mutex::futex::Mutex)), Alloc(_7), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(((*_1).0: &std::sync::Mutex<T>))}
+7[Field(0, std::sys::sync::mutex::futex::Mutex), Field(0, std::sync::atomic::Atomic<u32>), Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)] → {Alloc(_7), Alloc(((*_7).0: std::sys::sync::mutex::futex::Mutex)), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(((*_1).0: &std::sync::Mutex<T>))}
+7 → {Alloc(_7), Alloc(((*_7).0: std::sys::sync::mutex::futex::Mutex)), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(((*_1).0: &std::sync::Mutex<T>))}
+8 → {Alloc(_12), Alloc(_11), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_8)}
+10 → {Alloc(_10), ((*_7).0: std::sys::sync::mutex::futex::Mutex), Alloc(_5)}
+11 → {Alloc(_12), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_11)}
+12 → {Alloc(_12), Alloc((((_7.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>))}
+----------------------------------------
+
+
+Points-to relations for "<std::sync::PoisonError<T> as std::fmt::Debug>::fmt":
+----------------------------------------
+0 → {Alloc(_0), _4, Alloc(_3)}
+2 → {Alloc(_2)}
+3 → {_4, Alloc(_3)}
+4 → {Alloc(_2), Alloc(_4)}
+----------------------------------------
+
+
+Points-to relations for "func":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "main":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_4), _1, Alloc(_3), Alloc(_5)}
+4 → {Alloc(_4), _1, Alloc(_5)}
+5 → {Alloc(_5), _1}
+6 → {Alloc(_7), Alloc(_6), Alloc(_8), _2}
+7 → {Alloc(_7), Alloc(_8), _2}
+8 → {Alloc(_8), _2}
+9 → {Alloc(_9), Alloc((*_11)), ConstDeref(Val(Scalar(0x00000000), i32)), Alloc(_10)}
+10 → {Alloc((*_11)), Alloc(_10)}
+11[Deref] → {Alloc(_12), Alloc((*_11)), _3, Alloc(_11)}
+11 → {Alloc(_12), Alloc((*_11)), _3, Alloc(_11)}
+12 → {_3, Alloc(_12)}
+13 → {Alloc(_14), Alloc(_4), Alloc(_13), Alloc(_3), Alloc(_8), Alloc(_7), _2, _1, Alloc(_6), Alloc(_15), Alloc(_5)}
+14 → {Alloc(_14), Alloc(_4), _1, Alloc(_3), Alloc(_5)}
+15 → {Alloc(_7), Alloc(_6), Alloc(_8), Alloc(_15), _2}
+16 → {Alloc(_8), _2, Alloc(_17), Alloc(_7), Alloc(_16), Alloc(_6)}
+17 → {Alloc(_17), Alloc(_7), Alloc(_6), Alloc(_8), _2}
+18 → {Alloc(_19), Alloc(_4), Alloc(_18), Alloc(_3), _1, Alloc(_5)}
+19 → {Alloc(_19), Alloc(_4), _1, Alloc(_3), Alloc(_5)}
+20 → {ConstDeref(Val(Scalar(0x01), bool)), Alloc(_20), ConstDeref(Val(Scalar(0x00), bool))}
+21 → {Alloc(_21), ConstDeref(Val(Scalar(0x01), bool)), ConstDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x00000000), i32)) → {ConstantDeref(Val(Scalar(0x00000000), i32))}
+Const(Val(Scalar(0x01), bool)) → {ConstantDeref(Val(Scalar(0x01), bool))}
+ConstDeref(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+ConstDeref(Val(Scalar(0x00000000), i32)) → {ConstantDeref(Val(Scalar(0x00000000), i32))}
+ConstDeref(Val(Scalar(0x01), bool)) → {ConstantDeref(Val(Scalar(0x01), bool))}
+----------------------------------------
+
+
+Points-to relations for "std::mem::drop":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "std::ptr::drop_glue":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+3 → {Alloc(_2), Alloc(_1), Alloc(_3)}
+----------------------------------------
+
+
+Points-to relations for "std::result::Result::<T, E>::unwrap":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_1 as Ok).0: T))}
+1[Downcast(Some("Err"), 1), Field(0, E/#1)] → {Alloc(((_1 as Ok).0: T)), Alloc(_1), Alloc(((_1 as Err).0: E))}
+1[Downcast(Some("Ok"), 0), Field(0, T/#0)] → {Alloc(_1), Alloc(((_1 as Ok).0: T)), Alloc(((_1 as Err).0: E))}
+1 → {Alloc(((_1 as Ok).0: T)), Alloc(_1), Alloc(((_1 as Err).0: E))}
+2 → {Alloc(_2), _1}
+3 → {Alloc(_3), Alloc(((_1 as Err).0: E))}
+4 → {Alloc(_4), _3, Alloc(_6), Alloc(_5)}
+5 → {_3, Alloc(_6), Alloc(_5)}
+6 → {_3, Alloc(_6)}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_4), Alloc(_3), _7, Alloc(_2), Alloc(_6), Alloc(_5)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc(_4)}
+5 → {Alloc(_5), Alloc(_6), _7}
+6 → {Alloc(_6), _7}
+7[Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(_7), Alloc((_7.0: fn() -> T)), Alloc(_1)}
+7 → {Alloc(_7), Alloc(_1), Alloc((_7.0: fn() -> T))}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start::{closure#0}":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+1[Deref, Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(((*_1).0: fn() -> T))}
+2[Field(0, std::sys::process::unix::common::ExitCode), Field(0, u8)] → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_2), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+2 → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_2), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+3 → {Alloc(((*_1).0: fn() -> T)), Alloc(_4), Alloc(_3)}
+4 → {Alloc(((*_1).0: fn() -> T)), Alloc(_4)}
+5 → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+----------------------------------------
+
+
+Points-to relations for "std::sync::Mutex::<T>::lock":
+----------------------------------------
+0 → {Alloc(_0), ((*_1).1: std::sync::poison::Flag), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc((_14.0: &std::sync::Mutex<T>)), Alloc(_13), Alloc(((*_1).1: std::sync::poison::Flag)), _1, Alloc(_1), Alloc(_14), Alloc(_12), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+1[Deref, Field(0, std::sys::sync::mutex::futex::Mutex)] → {Alloc(((*_1).1: std::sync::poison::Flag)), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+1[Deref, Field(1, std::sync::poison::Flag)] → {Alloc(((*_1).1: std::sync::poison::Flag)), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+1[Field(0, std::sys::sync::mutex::futex::Mutex), Field(0, std::sync::atomic::Atomic<u32>), Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)] → {Alloc(((*_1).1: std::sync::poison::Flag)), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+1 → {Alloc(((*_1).1: std::sync::poison::Flag)), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+2 → {((*_1).0: std::sys::sync::mutex::futex::Mutex), Alloc(_2)}
+3 → {ConstDeref(Val(Scalar(0x0000000000000000), isize)), Alloc(_11), _5, Alloc(_3), Alloc(_10)}
+5 → {Alloc(_9), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_8), Alloc(_5)}
+7 → {Alloc(_7), ((*_1).0: std::sys::sync::mutex::futex::Mutex), Alloc(_2)}
+8 → {Alloc(_9), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc(_8)}
+9 → {Alloc(_9), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>))}
+10 → {ConstDeref(Val(Scalar(0x0000000000000000), isize)), Alloc(_11), _5, Alloc(_10)}
+11 → {_5, Alloc(_11)}
+12 → {Alloc(_12), ((*_1).1: std::sync::poison::Flag), Alloc(_13)}
+13 → {((*_1).1: std::sync::poison::Flag), Alloc(_13)}
+14[Field(0, &'{erased} std::sync::Mutex<T/#0>)] → {Alloc(_14), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc((_14.0: &std::sync::Mutex<T>)), Alloc(((*_1).1: std::sync::poison::Flag)), _1, Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+14 → {Alloc(_14), Alloc((((_1.0: std::sys::sync::mutex::futex::Mutex).0: std::sync::atomic::Atomic<u32>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align4<u32>>)), Alloc((_14.0: &std::sync::Mutex<T>)), Alloc(((*_1).1: std::sync::poison::Flag)), _1, Alloc(_1), Alloc(((*_1).0: std::sys::sync::mutex::futex::Mutex))}
+Const(Val(Scalar(0x0000000000000000), isize)) → {ConstantDeref(Val(Scalar(0x0000000000000000), isize))}
+ConstDeref(Val(Scalar(0x0000000000000000), isize)) → {ConstantDeref(Val(Scalar(0x0000000000000000), isize))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::Mutex::<T>::new":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00000000), u32)), Alloc(_4), Alloc(_3), ConstDeref(Val(Scalar(0x00), bool)), Alloc(_2), Alloc(_1), Alloc(_6), Alloc(_5)}
+1 → {Alloc(_1)}
+2 → {ConstDeref(Val(Scalar(0x00000000), u32)), Alloc(_2), Alloc(_5)}
+3 → {Alloc(_6), Alloc(_3), ConstDeref(Val(Scalar(0x00), bool))}
+4 → {Alloc(_1), Alloc(_4)}
+5 → {ConstDeref(Val(Scalar(0x00000000), u32)), Alloc(_5)}
+6 → {Alloc(_6), ConstDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x00000000), u32)) → {ConstantDeref(Val(Scalar(0x00000000), u32))}
+ConstDeref(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+ConstDeref(Val(Scalar(0x00000000), u32)) → {ConstantDeref(Val(Scalar(0x00000000), u32))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::MutexGuard::<'mutex, T>::new::{closure#0}":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_3), Alloc((_1.0: &std::sync::Mutex<T>))}
+1[Field(0, &'{erased} std::sync::Mutex<T/#1>)] → {Alloc((_1.0: &std::sync::Mutex<T>))}
+2 → {Alloc(_2)}
+3 → {Alloc(_3), Alloc((_1.0: &std::sync::Mutex<T>))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::atomic_compare_exchange":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_6), Alloc((_8.0: T))}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc(_4)}
+5 → {Alloc(_5)}
+6 → {Alloc(_6), Alloc((_8.0: T))}
+7 → {Alloc(_7), Alloc((_8.1: bool))}
+8[Field(0, T/#0)] → {Alloc((_8.1: bool)), Alloc(_2), Alloc((_8.0: T)), Alloc(_1), Alloc(_3), Alloc(_8)}
+8[Field(1, bool)] → {Alloc((_8.0: T)), Alloc(_2), Alloc((_8.1: bool)), Alloc(_1), Alloc(_3), Alloc(_8)}
+8 → {Alloc(_3), Alloc(_2), Alloc(_1), Alloc(_8), Alloc((_8.0: T)), Alloc((_8.1: bool))}
+9 → {_5, Alloc(_9)}
+10 → {_5, Alloc(_10)}
+11 → {_5, Alloc(_11)}
+12 → {Alloc(_12), _5}
+13 → {_5, Alloc(_13)}
+14 → {_4, Alloc(_14)}
+15 → {_5, Alloc(_15)}
+16 → {Alloc(_33), Alloc(_31), Alloc(_36), Alloc(_16), Alloc(_34), Alloc(_29), Alloc(_32), Alloc(_37), Alloc(_17), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_35), Alloc(_30), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+17 → {Alloc(_33), Alloc(_31), Alloc(_36), Alloc(_34), Alloc(_29), Alloc(_32), Alloc(_37), Alloc(_17), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_35), Alloc(_30), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+18 → {Alloc(_28), Alloc(_18), Alloc(_23), Alloc(_21), Alloc(_26), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_24), Alloc(_19), Alloc(_27), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20)}
+19 → {Alloc(_28), Alloc(_23), Alloc(_21), Alloc(_26), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_24), Alloc(_19), Alloc(_27), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20)}
+20 → {Alloc(_20), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+21 → {Alloc(_27), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_21), Alloc(_20), Alloc(_22)}
+22 → {Alloc(_22), Alloc(_20), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_27)}
+23 → {Alloc(_24), Alloc(_28), Alloc(_23), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_26), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+24 → {Alloc(_24), Alloc(_28), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_26), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+25 → {Alloc(_26), Alloc(_28), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+26 → {Alloc(_26), Alloc(_28), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+27 → {Alloc(_27), ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_20)}
+28 → {ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)), Alloc(_28)}
+29 → {Alloc(_29), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+30 → {Alloc(_29), Alloc(_31), Alloc(_36), Alloc(_30), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+31 → {Alloc(_29), Alloc(_31), Alloc(_36), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+32 → {Alloc(_34), Alloc(_33), Alloc(_32), Alloc(_37), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_35), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+33 → {Alloc(_34), Alloc(_33), Alloc(_37), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_35), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+34 → {Alloc(_34), Alloc(_35), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_37), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+35 → {Alloc(_35), Alloc(_37), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+36 → {Alloc(_29), Alloc(_36), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+37 → {Alloc(_37), ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+Const(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+Const(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+Const(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+ConstDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc1, meta: 52 }, &'{erased} str))}
+ConstDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc2, meta: 61 }, &'{erased} str))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::atomic_load":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3), _2}
+4 → {Alloc(_25), Alloc(_18), Alloc(_23), Alloc(_21), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), Alloc(_24), Alloc(_19), Alloc(_4), Alloc(_22), Alloc(_17), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20), Alloc(_5)}
+5 → {Alloc(_5), Alloc(_18), Alloc(_23), Alloc(_21), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), Alloc(_24), Alloc(_19), Alloc(_22), Alloc(_17), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_25), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20)}
+6 → {ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)), Alloc(_13), Alloc(_8), Alloc(_11), Alloc(_6), Alloc(_16), Alloc(_14), Alloc(_9), Alloc(_7), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15), Alloc(_10)}
+7 → {ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)), Alloc(_13), Alloc(_8), Alloc(_11), Alloc(_16), Alloc(_14), Alloc(_9), Alloc(_7), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15), Alloc(_10)}
+8 → {Alloc(_8), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+9 → {ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)), Alloc(_9), Alloc(_8), Alloc(_15), Alloc(_10)}
+10 → {ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)), Alloc(_8), Alloc(_15), Alloc(_10)}
+11 → {Alloc(_14), Alloc(_13), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_11), Alloc(_16), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+12 → {Alloc(_14), Alloc(_13), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_16), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+13 → {Alloc(_14), Alloc(_16), Alloc(_13), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+14 → {Alloc(_14), Alloc(_16), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+15 → {Alloc(_8), Alloc(_15), ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+16 → {ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)), Alloc(_16)}
+17 → {Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+18 → {Alloc(_24), Alloc(_19), Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), Alloc(_18)}
+19 → {Alloc(_24), Alloc(_19), Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+20 → {Alloc(_23), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_21), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20), Alloc(_25)}
+21 → {Alloc(_23), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_21), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_25)}
+22 → {ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), Alloc(_23), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_25), Alloc(_22)}
+23 → {ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)), Alloc(_23), Alloc(_25)}
+24 → {Alloc(_24), Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+25 → {Alloc(_25), ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+Const(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+Const(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+Const(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+ConstDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc7, meta: 49 }, &'{erased} str))}
+ConstDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc8, meta: 40 }, &'{erased} str))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::atomic_store":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_1)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {_3, Alloc(_4)}
+5 → {Alloc(_25), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str)), Alloc(_23), Alloc(_18), Alloc(_21), Alloc(_26), Alloc(_6), Alloc(_24), Alloc(_19), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20), Alloc(_5)}
+6 → {ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str)), Alloc(_23), Alloc(_18), Alloc(_21), Alloc(_26), Alloc(_6), Alloc(_24), Alloc(_19), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_20), Alloc(_25)}
+7 → {Alloc(_8), Alloc(_13), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_11), Alloc(_16), Alloc(_14), Alloc(_9), Alloc(_7), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_17), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15), Alloc(_10)}
+8 → {Alloc(_8), Alloc(_13), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_11), Alloc(_16), Alloc(_14), Alloc(_9), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_17), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15), Alloc(_10)}
+9 → {ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_9)}
+10 → {Alloc(_9), Alloc(_11), Alloc(_16), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_10)}
+11 → {Alloc(_9), Alloc(_16), Alloc(_11), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+12 → {Alloc(_14), Alloc(_13), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_12), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_17), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15)}
+13 → {Alloc(_14), Alloc(_13), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_17), ConstDeref(Val(Scalar(0x0000000000000001), usize)), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15)}
+14 → {Alloc(_17), Alloc(_14), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_15), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+15 → {Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)), Alloc(_15)}
+16 → {Alloc(_9), Alloc(_16), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+17 → {Alloc(_17), ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+18 → {Alloc(_18), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+19 → {Alloc(_19), Alloc(_18), Alloc(_25), Alloc(_20), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+20 → {Alloc(_18), Alloc(_25), Alloc(_20), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+21 → {Alloc(_24), Alloc(_23), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_21), Alloc(_26), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+22 → {Alloc(_24), Alloc(_23), Alloc(_22), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_26), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+23 → {Alloc(_24), Alloc(_26), Alloc(_23), ConstDeref(Val(Scalar(0x00000001), i32)), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+24 → {Alloc(_24), Alloc(_26), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+25 → {Alloc(_18), Alloc(_25), ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+26 → {ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str)), Alloc(_26)}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+Const(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+Const(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+Const(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+ConstDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc11, meta: 50 }, &'{erased} str))}
+ConstDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc12, meta: 42 }, &'{erased} str))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::poison::Flag::done":
+----------------------------------------
+1[Field(0, std::sync::atomic::Atomic<bool>), Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>)] → {Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+2[Deref, Field(0, bool)] → {Alloc(((*_2).0: bool))}
+3 → {Alloc(_3), Alloc(((*_2).0: bool))}
+4 → {Alloc(_6), Alloc(_4)}
+6 → {Alloc(_6)}
+7 → {Alloc(_8), Alloc(_7), ConstDeref(Val(Scalar(0x7fffffffffffffff), usize)), Alloc(_11), Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_10)}
+8 → {Alloc(_11), Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_8), Alloc(_10)}
+9[Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)] → {ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)), Alloc(_9), Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+9 → {Alloc(_9), Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+10 → {Alloc(_11), Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_10)}
+11 → {Alloc((_9.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_11)}
+12 → {Alloc(_12), Alloc(_16), Alloc(_13), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+13 → {Alloc(_16), Alloc(_13), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+14 → {Alloc(_14), Alloc(_16), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+16 → {Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>)), Alloc(_16)}
+Const(Val(Scalar(0x7fffffffffffffff), usize)) → {ConstantDeref(Val(Scalar(0x7fffffffffffffff), usize))}
+Const(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)) → {ConstantDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+ConstDeref(Val(Scalar(0x7fffffffffffffff), usize)) → {ConstantDeref(Val(Scalar(0x7fffffffffffffff), usize))}
+ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)) → {ConstantDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::poison::Flag::guard":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_4), ConstDeref(Val(Scalar(0x01), bool)), Alloc(_3), Alloc(_2), Alloc(_5)}
+1[Field(0, std::sync::atomic::Atomic<bool>), Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>)] → {Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+2 → {Alloc(_2), ConstDeref(Val(Scalar(0x01), bool)), Alloc(_3), Alloc(_5)}
+3 → {ConstDeref(Val(Scalar(0x01), bool)), Alloc(_3), Alloc(_5)}
+4 → {Alloc(_2), Alloc(_4), ConstDeref(Val(Scalar(0x01), bool)), Alloc(_3), Alloc(_5)}
+5 → {ConstDeref(Val(Scalar(0x01), bool)), Alloc(_5)}
+6 → {Alloc(_9), Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_7), ConstDeref(Val(Scalar(0x7fffffffffffffff), usize)), Alloc(_6), Alloc(_10)}
+7 → {Alloc(_7), Alloc(_9), Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_10)}
+8[Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)] → {Alloc(_8), ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)), Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+8 → {Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_8), ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+9 → {Alloc(_9), Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_10)}
+10 → {Alloc((_8.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_10)}
+12 → {Alloc(_12), Alloc(_16), Alloc(_13), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+13 → {Alloc(_16), Alloc(_13), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+14 → {Alloc(_14), Alloc(_16), Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>))}
+16 → {Alloc(((_1.0: std::sync::atomic::Atomic<bool>).0: std::cell::UnsafeCell<std::sync::atomic::private::Align1<u8>>)), Alloc(_16)}
+Const(Val(Scalar(0x01), bool)) → {ConstantDeref(Val(Scalar(0x01), bool))}
+Const(Val(Scalar(0x7fffffffffffffff), usize)) → {ConstantDeref(Val(Scalar(0x7fffffffffffffff), usize))}
+Const(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)) → {ConstantDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+ConstDeref(Val(Scalar(0x01), bool)) → {ConstantDeref(Val(Scalar(0x01), bool))}
+ConstDeref(Val(Scalar(0x7fffffffffffffff), usize)) → {ConstantDeref(Val(Scalar(0x7fffffffffffffff), usize))}
+ConstDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>)) → {ConstantDeref(Val(Scalar(alloc3), &'{erased} std::sync::atomic::Atomic<usize>))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::poison::map_result":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_10), Alloc(_9), Alloc(_4), Alloc(_8), Alloc(_7), Alloc(_2), Alloc(((_1 as Ok).0: T)), Alloc(_6), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T)), Alloc(_5)}
+1[Downcast(Some("Err"), 1), Field(0, std::sync::PoisonError<T/#0>), Field(0, T/#0)] → {Alloc(((_1 as Ok).0: T)), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T)), Alloc(_1)}
+1[Downcast(Some("Ok"), 0), Field(0, T/#0)] → {Alloc(_1), Alloc(((_1 as Ok).0: T)), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T))}
+1 → {Alloc(((_1 as Ok).0: T)), Alloc(_1), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T))}
+2 → {Alloc(_2)}
+3 → {Alloc(_3), _1}
+4 → {Alloc(((_1 as Ok).0: T)), Alloc(_4)}
+5 → {Alloc(_2), Alloc(_4), Alloc(((_1 as Ok).0: T)), Alloc(_6), Alloc(_5)}
+6 → {Alloc(((_1 as Ok).0: T)), Alloc(_4), Alloc(_6)}
+7 → {Alloc(_7), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T))}
+8 → {Alloc(_9), Alloc(_8), Alloc(_7), Alloc(_2), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T)), Alloc(_10)}
+9 → {Alloc(_7), Alloc(_2), Alloc(_9), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T)), Alloc(_10)}
+10 → {Alloc(_7), Alloc((((_1 as Err).0: std::sync::PoisonError<T>).0: T)), Alloc(_10)}
+----------------------------------------
+
+
+Points-to relations for "std::sys::backtrace::__rust_begin_short_backtrace":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1)}
+1 → {Alloc(_1)}
+----------------------------------------
+
+=== End of Points-to Relations ===
+

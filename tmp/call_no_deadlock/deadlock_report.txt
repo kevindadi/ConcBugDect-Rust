@@ -1,0 +1,39 @@
+====================== RustPTA Bug Report ======================
+
+Result        : BUG FOUND
+Mode          : deadlock
+Bug count     : 1
+Severity      : high
+Confidence    : medium
+State space   : states=4, edges=3, reachable=4
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.000 s
+
+Developer explanation:
+  The blocked operations list shows which transition cannot fire, which resource it needs, and the most recent resource-consuming step found on a witness path to the deadlock state.
+
+--------------------- Incident deadlock-1 ----------------------
+
+What happened:
+  A reachable global state has no progress transition before normal termination.
+
+  blocked ops    :
+    - inter_merge#4 [Resource operation] at src/main.rs:11:18: 11:37 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s2 -> s3: inter_merge#3 [Resource operation] at src/main.rs:10:18: 10:37 (#0)
+        Mutex_0: 1 -> 0
+
+Deadlock state:
+  state id : s3
+  reason   : Deadlock state with blocked resources
+
+  active control places:
+    - main_5 tokens=1 at src/main.rs:11:18: 11:37 (#0)
+
+Suggested next steps:
+  - Check whether locks are acquired in inconsistent order across threads or async roots.
+  - Inspect active control-flow places with tokens to identify the blocked execution roots.
+  - Open stategraph.dot around this state and petrinet.dot around the listed places.
+

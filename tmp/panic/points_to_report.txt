@@ -1,0 +1,158 @@
+
+=== Points-to Relations for All Functions ===
+
+Points-to relations for "<() as std::fmt::Debug>::fmt":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2)}
+2 → {Alloc(_2)}
+----------------------------------------
+
+
+Points-to relations for "<() as std::process::Termination>::report":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00), std::process::ExitCode))}
+Const(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+ConstDeref(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+----------------------------------------
+
+
+Points-to relations for "assert_panic":
+----------------------------------------
+1 → {Alloc(_1), ConstDeref(Val(Scalar(0x0000000a), i32))}
+2[Field(0, &'{erased} i32)] → {Alloc(_2), Alloc(_4), Alloc((_2.1: &i32)), _1, ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32)), Alloc((_2.0: &i32)), Alloc(_3)}
+2[Field(1, &'{erased} i32)] → {Alloc(_2), Alloc(_4), Alloc((_2.1: &i32)), _1, ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32)), Alloc(_3), Alloc((_2.0: &i32))}
+2 → {Alloc(_4), Alloc((_2.1: &i32)), Alloc(_3), Alloc((_2.0: &i32)), Alloc(_2), _1, ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32))}
+3 → {Alloc(_3), _1}
+4 → {ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32)), Alloc(_4)}
+5[Deref] → {Alloc((*_5)), Alloc((_2.0: &i32)), Alloc(_5)}
+5 → {Alloc((*_5)), Alloc((_2.0: &i32)), Alloc(_5)}
+6[Deref] → {Alloc(_6), Alloc((_2.1: &i32)), Alloc((*_6))}
+6 → {Alloc((*_6)), Alloc(_6), Alloc((_2.1: &i32))}
+7 → {Alloc(_7), Alloc(_9), Alloc((*_6)), Alloc((*_5)), Alloc(_8)}
+8 → {Alloc((*_5)), Alloc(_8)}
+9 → {Alloc(_9), Alloc((*_6))}
+10 → {Alloc(_10)}
+11 → {Alloc(_10), Alloc((_2.1: &i32)), Alloc((*_5)), Alloc((*_6)), Alloc((_2.0: &i32)), Alloc(_12), Alloc(_11), Alloc(_6), Alloc(_5)}
+12 → {Alloc(_12)}
+Const(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32))}
+Const(Val(Scalar(0x0000000a), i32)) → {ConstantDeref(Val(Scalar(0x0000000a), i32))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(0:4 ~ panic[3ddc]::assert_panic), args: [], promoted: Some(promoted[0]) }, &'{erased} i32))}
+ConstDeref(Val(Scalar(0x0000000a), i32)) → {ConstantDeref(Val(Scalar(0x0000000a), i32))}
+----------------------------------------
+
+
+Points-to relations for "expect_panic":
+----------------------------------------
+1 → {Alloc(_1), ConstDeref(Val(ZeroSized, ()))}
+2 → {ConstDeref(Val(ZeroSized, ())), Alloc(_2), Alloc(_1), Alloc(_3), ConstDeref(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str))}
+3 → {Alloc(_3), ConstDeref(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str))}
+Const(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str))}
+Const(Val(ZeroSized, ())) → {ConstantDeref(Val(ZeroSized, ()))}
+ConstDeref(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str)) → {ConstantDeref(Val(Slice { alloc_id: alloc4, meta: 13 }, &'{erased} str))}
+ConstDeref(Val(ZeroSized, ())) → {ConstantDeref(Val(ZeroSized, ()))}
+----------------------------------------
+
+
+Points-to relations for "main":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "no_panic_fp":
+----------------------------------------
+1 → {Alloc(_1), Alloc(_2)}
+2 → {Alloc(_2)}
+----------------------------------------
+
+
+Points-to relations for "panic_macro":
+----------------------------------------
+1 → {Alloc(_1), Alloc(_2)}
+2 → {Alloc(_2)}
+----------------------------------------
+
+
+Points-to relations for "std::fmt::Arguments::<'a>::from_str":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_8), Alloc(_3), Alloc(_6), Alloc(_1), Alloc(_4), Alloc(_9), Alloc(_7), Alloc(_2), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_5)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2), Alloc(_1), Alloc(_8), Alloc(_3)}
+3 → {Alloc(_1), Alloc(_8), Alloc(_3)}
+4 → {ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_4), Alloc(_9), Alloc(_7), Alloc(_6), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_1), Alloc(_5)}
+5 → {ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_9), Alloc(_7), Alloc(_6), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_1), Alloc(_5)}
+6 → {Alloc(_7), ConstDeref(Val(Scalar(0x00000001), i32)), Alloc(_9), Alloc(_6), Alloc(_1)}
+7 → {Alloc(_7), Alloc(_9), Alloc(_1)}
+8 → {Alloc(_1), Alloc(_8)}
+9 → {Alloc(_1), Alloc(_9)}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+Const(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x00000001), i32)) → {ConstantDeref(Val(Scalar(0x00000001), i32))}
+----------------------------------------
+
+
+Points-to relations for "std::option::Option::<T>::unwrap":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_1 as Some).0: T))}
+1[Downcast(Some("Some"), 1), Field(0, T/#0)] → {Alloc(_1), Alloc(((_1 as Some).0: T))}
+1 → {Alloc(_1), Alloc(((_1 as Some).0: T))}
+2 → {Alloc(_2), _1}
+----------------------------------------
+
+
+Points-to relations for "std::result::Result::<T, E>::expect":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_1 as Ok).0: T))}
+1[Downcast(Some("Err"), 1), Field(0, E/#1)] → {Alloc(_1), Alloc(((_1 as Err).0: E)), Alloc(((_1 as Ok).0: T))}
+1[Downcast(Some("Ok"), 0), Field(0, T/#0)] → {Alloc(_1), Alloc(((_1 as Ok).0: T)), Alloc(((_1 as Err).0: E))}
+1 → {Alloc(((_1 as Err).0: E)), Alloc(((_1 as Ok).0: T)), Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3), _1}
+4 → {Alloc(_4), Alloc(((_1 as Err).0: E))}
+5 → {Alloc(_7), Alloc(_2), _4, Alloc(_6), Alloc(_5)}
+6 → {Alloc(_7), _4, Alloc(_6)}
+7 → {Alloc(_7), _4}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_4), Alloc(_3), _7, Alloc(_2), Alloc(_6), Alloc(_5)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc(_4)}
+5 → {Alloc(_5), Alloc(_6), _7}
+6 → {Alloc(_6), _7}
+7[Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(_7), Alloc(_1), Alloc((_7.0: fn() -> T))}
+7 → {Alloc(_7), Alloc(_1), Alloc((_7.0: fn() -> T))}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start::{closure#0}":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+1[Deref, Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(((*_1).0: fn() -> T))}
+2[Field(0, std::sys::process::unix::common::ExitCode), Field(0, u8)] → {Alloc(_2), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+2 → {Alloc(_2), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+3 → {Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+4 → {Alloc(_4), Alloc(((*_1).0: fn() -> T))}
+5 → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+----------------------------------------
+
+
+Points-to relations for "std::sys::backtrace::__rust_begin_short_backtrace":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1)}
+1 → {Alloc(_1)}
+----------------------------------------
+
+
+Points-to relations for "unwrap_panic":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+----------------------------------------
+
+=== End of Points-to Relations ===
+

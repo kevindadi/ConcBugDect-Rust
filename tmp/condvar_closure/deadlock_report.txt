@@ -1,0 +1,158 @@
+====================== RustPTA Bug Report ======================
+
+Result        : BUG FOUND
+Mode          : deadlock
+Bug count     : 4
+Severity      : high
+Confidence    : medium
+State space   : states=54, edges=82, reachable=54
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.004 s
+
+Developer explanation:
+  The blocked operations list shows which transition cannot fire, which resource it needs, and the most recent resource-consuming step found on a witness path to the deadlock state.
+
+--------------------- Incident deadlock-1 ----------------------
+
+What happened:
+  A reachable global state has no progress transition before normal termination.
+
+  blocked ops    :
+    - inter_merge#66 [Resource operation] at src/main.rs:14:23: 14:50 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s22 -> s28: inter_merge#63 [Resource operation] at src/main.rs:12:27: 12:47 (#0)
+        Mutex_0: 1 -> 0
+
+Deadlock state:
+  state id : s37
+  reason   : Deadlock state with blocked resources
+
+  active control places:
+    - Condvar:src/main.rs:34:46: 34:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:61:46: 61:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:7:46: 7:60 tokens=1 at #0) (
+    - main_0_wait tokens=1 at src/main.rs:159:5: 159:18 (#0)
+    - std_correct_6 tokens=1 at src/main.rs:25:5: 25:15 (#0)
+    - std_correct::{closure#0}_8 tokens=1 at src/main.rs:14:23: 14:50 (#0)
+
+  resource tokens:
+    - condvar_closure::std_correct::{closure#1}_end tokens=1
+
+Suggested next steps:
+  - Check whether locks are acquired in inconsistent order across threads or async roots.
+  - Inspect active control-flow places with tokens to identify the blocked execution roots.
+  - Open stategraph.dot around this state and petrinet.dot around the listed places.
+
+--------------------- Incident deadlock-2 ----------------------
+
+What happened:
+  A reachable global state has no progress transition before normal termination.
+
+  blocked ops    :
+    - inter_merge#83 [Resource operation] at src/main.rs:38:18: 38:37 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s50 -> s53: inter_merge#131 [Resource operation] at src/main.rs:47:18: 47:37 (#0)
+        Mutex_0: 1 -> 0
+    - inter_merge#134 [Resource operation] at src/main.rs:49:27: 49:47 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s50 -> s53: inter_merge#131 [Resource operation] at src/main.rs:47:18: 47:37 (#0)
+        Mutex_0: 1 -> 0
+
+Deadlock state:
+  state id : s53
+  reason   : Deadlock state with blocked resources
+
+  active control places:
+    - Condvar:src/main.rs:34:46: 34:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:61:46: 61:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:7:46: 7:60 tokens=1 at #0) (
+    - main_1_wait tokens=1 at src/main.rs:160:5: 160:24 (#0)
+    - std_deadlock_wait_9 tokens=1 at src/main.rs:54:5: 54:15 (#0)
+    - std_deadlock_wait::{closure#0}_2 tokens=1 at src/main.rs:38:18: 38:37 (#0)
+    - std_deadlock_wait::{closure#1}_5 tokens=1 at src/main.rs:49:27: 49:47 (#0)
+
+Suggested next steps:
+  - Check whether locks are acquired in inconsistent order across threads or async roots.
+  - Inspect active control-flow places with tokens to identify the blocked execution roots.
+  - Open stategraph.dot around this state and petrinet.dot around the listed places.
+
+--------------------- Incident deadlock-3 ----------------------
+
+What happened:
+  A reachable global state has no progress transition before normal termination.
+
+  blocked ops    :
+    - inter_merge#84 [Resource operation] at src/main.rs:40:27: 40:47 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s45 -> s48: inter_merge#83 [Resource operation] at src/main.rs:38:18: 38:37 (#0)
+        Mutex_0: 1 -> 0
+    - inter_merge#131 [Resource operation] at src/main.rs:47:18: 47:37 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s45 -> s48: inter_merge#83 [Resource operation] at src/main.rs:38:18: 38:37 (#0)
+        Mutex_0: 1 -> 0
+
+Deadlock state:
+  state id : s52
+  reason   : Deadlock state with blocked resources
+
+  active control places:
+    - Condvar:src/main.rs:34:46: 34:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:61:46: 61:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:7:46: 7:60 tokens=1 at #0) (
+    - main_1_wait tokens=1 at src/main.rs:160:5: 160:24 (#0)
+    - std_deadlock_wait_9 tokens=1 at src/main.rs:54:5: 54:15 (#0)
+    - std_deadlock_wait::{closure#0}_5 tokens=1 at src/main.rs:40:27: 40:47 (#0)
+    - std_deadlock_wait::{closure#1}_2 tokens=1 at src/main.rs:47:18: 47:37 (#0)
+
+Suggested next steps:
+  - Check whether locks are acquired in inconsistent order across threads or async roots.
+  - Inspect active control-flow places with tokens to identify the blocked execution roots.
+  - Open stategraph.dot around this state and petrinet.dot around the listed places.
+
+--------------------- Incident deadlock-4 ----------------------
+
+What happened:
+  A reachable global state has no progress transition before normal termination.
+
+  blocked ops    :
+    - inter_merge#66 [Resource operation] at src/main.rs:14:23: 14:50 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s4 -> s7: inter_merge#63 [Resource operation] at src/main.rs:12:27: 12:47 (#0)
+        Mutex_0: 1 -> 0
+    - inter_merge#72 [Resource operation] at src/main.rs:20:27: 20:47 (#0)
+      needs: Mutex_0
+      resource Mutex_0: has 0, needs 1
+      last resource use:
+        s4 -> s7: inter_merge#63 [Resource operation] at src/main.rs:12:27: 12:47 (#0)
+        Mutex_0: 1 -> 0
+
+Deadlock state:
+  state id : s26
+  reason   : Deadlock state with blocked resources
+
+  active control places:
+    - Condvar:src/main.rs:34:46: 34:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:61:46: 61:60 tokens=1 at #0) (
+    - Condvar:src/main.rs:7:46: 7:60 tokens=1 at #0) (
+    - main_0_wait tokens=1 at src/main.rs:159:5: 159:18 (#0)
+    - std_correct_6 tokens=1 at src/main.rs:25:5: 25:15 (#0)
+    - std_correct::{closure#0}_8 tokens=1 at src/main.rs:14:23: 14:50 (#0)
+    - std_correct::{closure#1}_2 tokens=1 at src/main.rs:20:27: 20:47 (#0)
+
+Suggested next steps:
+  - Check whether locks are acquired in inconsistent order across threads or async roots.
+  - Inspect active control-flow places with tokens to identify the blocked execution roots.
+  - Open stategraph.dot around this state and petrinet.dot around the listed places.
+

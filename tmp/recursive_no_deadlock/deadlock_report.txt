@@ -1,0 +1,14 @@
+====================== RustPTA Bug Report ======================
+
+Result        : NO BUG FOUND
+Mode          : deadlock
+Bug count     : 0
+Severity      : none
+Confidence    : high
+State space   : states=10, edges=10, reachable=10
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.000 s
+
+Developer explanation:
+  No deadlock state was found in the explored state graph.
+

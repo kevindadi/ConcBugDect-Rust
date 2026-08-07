@@ -1,0 +1,361 @@
+
+=== Points-to Relations for All Functions ===
+
+Points-to relations for "<() as std::process::Termination>::report":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00), std::process::ExitCode))}
+Const(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+ConstDeref(Val(Scalar(0x00), std::process::ExitCode)) → {ConstantDeref(Val(Scalar(0x00), std::process::ExitCode))}
+----------------------------------------
+
+
+Points-to relations for "<parking_lot::RawRwLock as parking_lot::lock_api::RawRwLock>::lock_shared":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+3 → {Alloc(_4), Alloc(_1), Alloc(_3)}
+4 → {Alloc(_4)}
+6 → {Alloc(_6), Alloc(_1)}
+----------------------------------------
+
+
+Points-to relations for "<parking_lot::RawRwLock as parking_lot::lock_api::RawRwLock>::unlock_shared":
+----------------------------------------
+1[Deref, Field(0, std::sync::atomic::Atomic<usize>)] → {Alloc(((*_1).0: std::sync::atomic::Atomic<usize>)), Alloc(_1)}
+1 → {Alloc(_1), Alloc(((*_1).0: std::sync::atomic::Atomic<usize>))}
+2 → {Alloc(((*_1).0: std::sync::atomic::Atomic<usize>)), Alloc(_2), Alloc(_1)}
+3 → {Alloc(_7), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_6), Alloc(_3), Alloc(_5)}
+5 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_5)}
+6 → {Alloc(_6), ((*_1).0: std::sync::atomic::Atomic<usize>)}
+7 → {Alloc(_7)}
+8 → {Alloc(_10), Alloc(_8), Alloc(_3), Alloc(_11), Alloc(_6), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize)), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)), Alloc(_9), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_12), Alloc(_7), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)), Alloc(_5)}
+9 → {Alloc(_5), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)), Alloc(_9), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_3), Alloc(_7), Alloc(_11), Alloc(_6), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)), Alloc(_10)}
+10 → {Alloc(_10), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_3), Alloc(_7), Alloc(_6), Alloc(_5)}
+11 → {ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)), Alloc(_11), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize))}
+12 → {Alloc(_12), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize))}
+13 → {Alloc(((*_1).0: std::sync::atomic::Atomic<usize>)), Alloc(_1), Alloc(_13)}
+Const(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize))}
+Const(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize))}
+Const(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:251 ~ parking_lot[6fd4]::raw_rwlock::WRITER_PARKED_BIT), args: [], promoted: None }, usize))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:255 ~ parking_lot[6fd4]::raw_rwlock::ONE_READER), args: [], promoted: None }, usize))}
+----------------------------------------
+
+
+Points-to relations for "<parking_lot::RawRwLock as parking_lot::lock_api::RawRwLockRecursive>::lock_shared_recursive":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+3 → {Alloc(_4), Alloc(_1), Alloc(_3)}
+4 → {Alloc(_4)}
+6 → {Alloc(_6), Alloc(_1)}
+----------------------------------------
+
+
+Points-to relations for "<parking_lot::lock_api::RwLockReadGuard<'a, R, T> as std::ops::Deref>::deref":
+----------------------------------------
+0 → {(*_2), Alloc(_0)}
+1[Deref, Field(0, &'{erased} parking_lot::lock_api::RwLock<R/#1, T/#2>)] → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>))}
+2[Deref] → {Alloc((*_2)), Alloc(_2), Alloc(_3), ((*_4).1: std::cell::UnsafeCell<T>)}
+2 → {Alloc(_2), Alloc((*_2)), Alloc(_3), ((*_4).1: std::cell::UnsafeCell<T>)}
+3 → {Alloc(_3), ((*_4).1: std::cell::UnsafeCell<T>)}
+4[Deref, Field(1, std::cell::UnsafeCell<T/#2>)] → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>)), Alloc(_4), Alloc(((*_4).1: std::cell::UnsafeCell<T>))}
+4 → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>)), Alloc(_4), Alloc(((*_4).1: std::cell::UnsafeCell<T>))}
+----------------------------------------
+
+
+Points-to relations for "<parking_lot::lock_api::RwLockReadGuard<'a, R, T> as std::ops::Drop>::drop":
+----------------------------------------
+1[Deref, Field(0, &'{erased} parking_lot::lock_api::RwLock<R/#1, T/#2>)] → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>))}
+2 → {Alloc(_2), ((*_4).0: R), Alloc(_3)}
+3 → {((*_4).0: R), Alloc(_3)}
+4[Deref, Field(0, R/#1)] → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>)), Alloc(_4), Alloc(((*_4).0: R))}
+4 → {Alloc(((*_1).0: &parking_lot::lock_api::RwLock<R, T>)), Alloc(_4), Alloc(((*_4).0: R))}
+----------------------------------------
+
+
+Points-to relations for "<std::sync::atomic::Atomic<usize> as parking_lot::elision::AtomicElisionExt>::elision_compare_exchange_acquire":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "<std::sync::atomic::Atomic<usize> as parking_lot::elision::AtomicElisionExt>::elision_fetch_sub_release":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "core::num::<impl usize>::checked_add":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_5), Alloc(_1), ConstDeref(Val(Indirect { alloc_id: alloc8, offset: Size(0 bytes) }, std::option::Option<usize>))}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3), Alloc((_4.1: bool))}
+4[Field(1, bool)] → {Alloc(_2), Alloc(_4), Alloc(_1), Alloc((_4.1: bool))}
+4 → {Alloc(_2), Alloc(_4), Alloc(_1), Alloc((_4.1: bool))}
+5 → {Alloc(_2), Alloc(_1), Alloc(_5)}
+Const(Val(Indirect { alloc_id: alloc8, offset: Size(0 bytes) }, std::option::Option<usize>)) → {ConstantDeref(Val(Indirect { alloc_id: alloc8, offset: Size(0 bytes) }, std::option::Option<usize>))}
+ConstDeref(Val(Indirect { alloc_id: alloc8, offset: Size(0 bytes) }, std::option::Option<usize>)) → {ConstantDeref(Val(Indirect { alloc_id: alloc8, offset: Size(0 bytes) }, std::option::Option<usize>))}
+----------------------------------------
+
+
+Points-to relations for "main":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "parking_lot::RawRwLock::deadlock_acquire":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_2), Alloc(_4), Alloc(_1), Alloc(_3)}
+3 → {Alloc(_4), Alloc(_1), Alloc(_3)}
+4 → {Alloc(_1), Alloc(_4)}
+5 → {Alloc((_9.0: usize)), Alloc(_6), Alloc(_5)}
+6 → {Alloc(_6), Alloc((_9.0: usize))}
+7 → {Alloc(_7), Alloc(_1), Alloc(_8)}
+8 → {Alloc(_1), Alloc(_8)}
+9[Field(0, usize)] → {Alloc(_7), Alloc(_9), Alloc((_9.0: usize)), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_8), Alloc(_1)}
+9 → {Alloc(_9), Alloc((_9.0: usize)), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_8), Alloc(_7), Alloc(_1)}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::RawRwLock::deadlock_release":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_2), Alloc(_4), Alloc(_1), Alloc(_3)}
+3 → {Alloc(_4), Alloc(_1), Alloc(_3)}
+4 → {Alloc(_1), Alloc(_4)}
+5 → {Alloc((_9.0: usize)), Alloc(_6), Alloc(_5)}
+6 → {Alloc(_6), Alloc((_9.0: usize))}
+7 → {Alloc(_7), Alloc(_1), Alloc(_8)}
+8 → {Alloc(_1), Alloc(_8)}
+9[Field(0, usize)] → {Alloc(_7), Alloc(_9), Alloc((_9.0: usize)), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_8), Alloc(_1)}
+9 → {Alloc(_9), Alloc((_9.0: usize)), ConstDeref(Val(Scalar(0x0000000000000001), usize)), Alloc(_8), Alloc(_7), Alloc(_1)}
+Const(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+ConstDeref(Val(Scalar(0x0000000000000001), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000001), usize))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::RawRwLock::try_lock_shared_fast":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_12), ConstDeref(Val(Scalar(0x00), bool)), _13, Alloc(_18), _19}
+1[Deref, Field(0, std::sync::atomic::Atomic<usize>)] → {Alloc(((*_1).0: std::sync::atomic::Atomic<usize>))}
+3 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), Alloc(_3), Alloc(_5)}
+4 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4)}
+5 → {Alloc(_5)}
+6 → {Alloc(_5), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), ConstDeref(Val(Scalar(0x0000000000000000), usize)), Alloc(_3), Alloc(_7), Alloc(_6), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize))}
+7 → {ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize)), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), Alloc(_3), Alloc(_7), Alloc(_5)}
+8 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_9), ConstDeref(Val(Scalar(0x0000000000000000), usize)), Alloc(_4), Alloc(_8), Alloc(_3), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)), Alloc(_5)}
+9 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_9), Alloc(_4), Alloc(_3), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)), Alloc(_5)}
+11 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), ConstDeref(Val(Scalar(0x0000000000000000), usize)), Alloc(_3), Alloc(_11), Alloc(_5)}
+12 → {Alloc(_12), _13}
+13 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_14), Alloc(_13)}
+14 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_14)}
+15[Downcast(Some("Some"), 1), Field(0, usize)] → {Alloc(((_15 as Some).0: usize)), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), Alloc(_5), Alloc(_3), Alloc(_15)}
+15 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), Alloc(_3), Alloc(((_15 as Some).0: usize)), Alloc(_15), Alloc(_5)}
+16 → {_15, Alloc(_16)}
+17 → {Alloc(_17), Alloc(((_15 as Some).0: usize))}
+18 → {Alloc(_18), _19}
+19 → {Alloc(_19), ((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_4), Alloc(_3), Alloc(_22), Alloc(_17), Alloc(((_15 as Some).0: usize)), Alloc(_21), Alloc(_20), Alloc(_5)}
+20 → {((*_1).0: std::sync::atomic::Atomic<usize>), Alloc(_20)}
+21 → {Alloc(_21)}
+22 → {Alloc(_22)}
+Const(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize))}
+Const(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize))}
+Const(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x0000000000000000), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000000), usize))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:253 ~ parking_lot[6fd4]::raw_rwlock::WRITER_BIT), args: [], promoted: None }, usize))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(20:254 ~ parking_lot[6fd4]::raw_rwlock::READERS_MASK), args: [], promoted: None }, usize))}
+ConstDeref(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+ConstDeref(Val(Scalar(0x0000000000000000), usize)) → {ConstantDeref(Val(Scalar(0x0000000000000000), usize))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::elision::have_elision":
+----------------------------------------
+0 → {Alloc(_0), ConstDeref(Val(Scalar(0x00), bool))}
+Const(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+ConstDeref(Val(Scalar(0x00), bool)) → {ConstantDeref(Val(Scalar(0x00), bool))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::lock_api::RwLock::<R, T>::make_read_guard_unchecked":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1), ConstDeref(Val(ZeroSized, std::marker::PhantomData<(&'{erased} T/#1, Alias(AliasTy { args: [R/#0], kind: Projection { def_id: DefId(21:453 ~ lock_api[0611]::rwlock::RawRwLock::GuardMarker) }, .. }))>))}
+1 → {Alloc(_1)}
+Const(Val(ZeroSized, std::marker::PhantomData<(&'{erased} T/#1, Alias(AliasTy { args: [R/#0], kind: Projection { def_id: DefId(21:453 ~ lock_api[0611]::rwlock::RawRwLock::GuardMarker) }, .. }))>)) → {ConstantDeref(Val(ZeroSized, std::marker::PhantomData<(&'{erased} T/#1, Alias(AliasTy { args: [R/#0], kind: Projection { def_id: DefId(21:453 ~ lock_api[0611]::rwlock::RawRwLock::GuardMarker) }, .. }))>))}
+ConstDeref(Val(ZeroSized, std::marker::PhantomData<(&'{erased} T/#1, Alias(AliasTy { args: [R/#0], kind: Projection { def_id: DefId(21:453 ~ lock_api[0611]::rwlock::RawRwLock::GuardMarker) }, .. }))>)) → {ConstantDeref(Val(ZeroSized, std::marker::PhantomData<(&'{erased} T/#1, Alias(AliasTy { args: [R/#0], kind: Projection { def_id: DefId(21:453 ~ lock_api[0611]::rwlock::RawRwLock::GuardMarker) }, .. }))>))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::lock_api::RwLock::<R, T>::new":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(21:452 ~ lock_api[0611]::rwlock::RawRwLock::INIT), args: [R/#0], promoted: None }, R/#0)), Alloc(_1)}
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+Const(Unevaluated(UnevaluatedConst { def: DefId(21:452 ~ lock_api[0611]::rwlock::RawRwLock::INIT), args: [R/#0], promoted: None }, R/#0)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(21:452 ~ lock_api[0611]::rwlock::RawRwLock::INIT), args: [R/#0], promoted: None }, R/#0))}
+ConstDeref(Unevaluated(UnevaluatedConst { def: DefId(21:452 ~ lock_api[0611]::rwlock::RawRwLock::INIT), args: [R/#0], promoted: None }, R/#0)) → {ConstantDeref(Unevaluated(UnevaluatedConst { def: DefId(21:452 ~ lock_api[0611]::rwlock::RawRwLock::INIT), args: [R/#0], promoted: None }, R/#0))}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::lock_api::RwLock::<R, T>::read":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1), Alloc(((*_1).0: R))}
+1[Deref, Field(0, R/#0)] → {Alloc(_1), Alloc(((*_1).0: R))}
+1 → {Alloc(_1), Alloc(((*_1).0: R))}
+2 → {((*_1).0: R), Alloc(_2), Alloc(_3)}
+3 → {((*_1).0: R), Alloc(_3)}
+----------------------------------------
+
+
+Points-to relations for "parking_lot::lock_api::RwLock::<R, T>::read_recursive":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1), Alloc(((*_1).0: R))}
+1[Deref, Field(0, R/#0)] → {Alloc(_1), Alloc(((*_1).0: R))}
+1 → {Alloc(_1), Alloc(((*_1).0: R))}
+2 → {((*_1).0: R), Alloc(_2), Alloc(_3)}
+3 → {((*_1).0: R), Alloc(_3)}
+----------------------------------------
+
+
+Points-to relations for "parking_lot_core::parking_lot::deadlock::acquire_resource":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "parking_lot_core::parking_lot::deadlock::release_resource":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "parking_lot_rwlock":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc((_13.0: i32)), Alloc((_20.0: i32)), ConstDeref(Val(Scalar(0x00000000), i32))}
+1 → {Alloc(_1)}
+2 → {Alloc(_2), Alloc((_13.0: i32)), Alloc((_20.0: i32)), ConstDeref(Val(Scalar(0x00000000), i32))}
+3 → {Alloc(_4), _5, Alloc(_3)}
+4 → {_5, Alloc(_4)}
+5 → {_1, Alloc(_6), Alloc(_5)}
+6 → {Alloc(_6), _1}
+7 → {Alloc(_7), Alloc((*_8))}
+8[Deref] → {Alloc(_9), Alloc(_8), _10, Alloc((*_8))}
+8 → {Alloc(_9), Alloc(_8), _10, Alloc((*_8))}
+9 → {_10, Alloc(_9)}
+10 → {Alloc(_11), _1, Alloc(_10)}
+11 → {Alloc(_11), _1}
+12 → {Alloc(_12), Alloc(_2), Alloc((_13.0: i32)), Alloc((_20.0: i32)), ConstDeref(Val(Scalar(0x00000000), i32))}
+13[Field(0, i32)] → {Alloc((_20.0: i32)), Alloc(_13), ConstDeref(Val(Scalar(0x00000000), i32)), Alloc(_7), Alloc(_12), Alloc((_13.0: i32)), Alloc(_2), Alloc((*_8))}
+13 → {Alloc((_20.0: i32)), Alloc(_13), ConstDeref(Val(Scalar(0x00000000), i32)), Alloc(_7), Alloc(_12), Alloc((_13.0: i32)), Alloc(_2), Alloc((*_8))}
+14 → {Alloc((*_15)), Alloc(_14)}
+15[Deref] → {Alloc(_16), Alloc((*_15)), Alloc(_15), _17}
+15 → {Alloc(_16), Alloc((*_15)), Alloc(_15), _17}
+16 → {_17, Alloc(_16)}
+17 → {Alloc(_17), _1, Alloc(_18)}
+18 → {Alloc(_18), _1}
+19 → {Alloc(_19), Alloc(_2), Alloc((_13.0: i32)), Alloc((_20.0: i32)), ConstDeref(Val(Scalar(0x00000000), i32))}
+20[Field(0, i32)] → {Alloc((_20.0: i32)), Alloc(_19), Alloc(_14), Alloc((*_15)), ConstDeref(Val(Scalar(0x00000000), i32)), Alloc(_2), Alloc((_13.0: i32)), Alloc(_20)}
+20 → {Alloc(_19), Alloc(_14), Alloc((_20.0: i32)), Alloc((*_15)), ConstDeref(Val(Scalar(0x00000000), i32)), Alloc(_2), Alloc((_13.0: i32)), Alloc(_20)}
+Const(Val(Scalar(0x00000000), i32)) → {ConstantDeref(Val(Scalar(0x00000000), i32))}
+ConstDeref(Val(Scalar(0x00000000), i32)) → {ConstantDeref(Val(Scalar(0x00000000), i32))}
+----------------------------------------
+
+
+Points-to relations for "std::cell::UnsafeCell::<T>::get":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_1)}
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+----------------------------------------
+
+
+Points-to relations for "std::cell::UnsafeCell::<T>::new":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1)}
+1 → {Alloc(_1)}
+----------------------------------------
+
+
+Points-to relations for "std::intrinsics::cold_path":
+----------------------------------------
+----------------------------------------
+
+
+Points-to relations for "std::ptr::drop_glue":
+----------------------------------------
+1 → {Alloc(_1)}
+2 → {Alloc(_1), Alloc(_2)}
+3 → {Alloc(_2), Alloc(_1), Alloc(_3)}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_4), Alloc(_3), _7, Alloc(_2), Alloc(_6), Alloc(_5)}
+1 → {Alloc(_1)}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc(_4)}
+5 → {Alloc(_5), Alloc(_6), _7}
+6 → {Alloc(_6), _7}
+7[Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(_7), Alloc(_1), Alloc((_7.0: fn() -> T))}
+7 → {Alloc(_7), Alloc(_1), Alloc((_7.0: fn() -> T))}
+----------------------------------------
+
+
+Points-to relations for "std::rt::lang_start::{closure#0}":
+----------------------------------------
+0 → {Alloc(_0), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+1[Deref, Field(0, Binder { value: fn() -> T/#0, bound_vars: [] })] → {Alloc(((*_1).0: fn() -> T))}
+2[Field(0, std::sys::process::unix::common::ExitCode), Field(0, u8)] → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_2), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+2 → {Alloc(_2), Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_4), Alloc(((*_1).0: fn() -> T)), Alloc(_3)}
+3 → {Alloc(((*_1).0: fn() -> T)), Alloc(_4), Alloc(_3)}
+4 → {Alloc(((*_1).0: fn() -> T)), Alloc(_4)}
+5 → {Alloc(((_2.0: std::sys::process::unix::common::ExitCode).0: u8)), Alloc(_5)}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::Atomic::<usize>::compare_exchange_weak":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_5), Alloc(_4), Alloc(_3), Alloc(_7), Alloc(_2), Alloc(_6), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+1[Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)] → {Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc(_4)}
+5 → {Alloc(_5)}
+6 → {Alloc(_7), Alloc(_6), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+7 → {Alloc(_7), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::Atomic::<usize>::fetch_sub":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_4), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_5)}
+1[Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)] → {Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+2 → {Alloc(_2)}
+3 → {Alloc(_3)}
+4 → {Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_4), Alloc(_5)}
+5 → {Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)), Alloc(_5)}
+6 → {_3, Alloc(_6)}
+----------------------------------------
+
+
+Points-to relations for "std::sync::atomic::Atomic::<usize>::load":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_2), Alloc(_4), Alloc(_3), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+1[Field(0, std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>)] → {Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+2 → {Alloc(_2)}
+3 → {Alloc(_4), Alloc(_3), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+4 → {Alloc(_4), Alloc((_1.0: std::cell::UnsafeCell<std::sync::atomic::private::Align8<usize>>))}
+----------------------------------------
+
+
+Points-to relations for "std::sys::backtrace::__rust_begin_short_backtrace":
+----------------------------------------
+0 → {Alloc(_0), Alloc(_1)}
+1 → {Alloc(_1)}
+----------------------------------------
+
+=== End of Points-to Relations ===
+

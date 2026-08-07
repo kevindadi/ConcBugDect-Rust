@@ -1,0 +1,8 @@
+=== Petri net connectivity diagnostics ===
+Totals: 145 places, 116 transitions
+
+Isolated places (3):
+  [62] Condvar:src/main.rs:60:23: 60:37 (#0)
+  [63] Condvar:src/main.rs:16:23: 16:37 (#0)
+  [64] Condvar:src/main.rs:106:23: 106:37 (#0)
+

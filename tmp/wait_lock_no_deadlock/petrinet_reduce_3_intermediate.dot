@@ -1,0 +1,32 @@
+digraph PetriNet {
+    rankdir=LR;
+    node [fontname="Helvetica"];
+    place_0 [label="wait_lock_no_deadlock::wait_start\nFunctionStart\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_1 [label="wait_lock_no_deadlock::wait_end\nFunctionEnd\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_2 [label="wait_lock_no_deadlock::main_start\nFunctionStart\n1/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_3 [label="wait_lock_no_deadlock::main_end\nFunctionEnd\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_4 [label="Mutex_0\nResources\n1/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_5 [label="Mutex_1\nResources\n1/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_6 [label="main_2\nBasicBlock\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_7 [label="main_5\nBasicBlock\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    place_8 [label="main_3_wait\nBasicBlock\n0/1", shape=circle, style=filled, fillcolor="#e3f2fd"];
+    trans_0 [label="main_5_return\nReturn(7)", shape=box, style=filled, fillcolor="#ffe0b2"];
+    trans_1 [label="inter_merge#0\nNormal", shape=box, style=filled, fillcolor="#ffe0b2"];
+    trans_2 [label="inter_merge#2\nNormal", shape=box, style=filled, fillcolor="#ffe0b2"];
+    trans_3 [label="inter_merge#3\nFunction", shape=box, style=filled, fillcolor="#ffe0b2"];
+    trans_4 [label="inter_merge#4\nNormal", shape=box, style=filled, fillcolor="#ffe0b2"];
+    place_0 -> trans_1;
+    place_1 -> trans_4;
+    place_2 -> trans_2;
+    place_4 -> trans_3;
+    place_6 -> trans_3;
+    place_7 -> trans_0;
+    place_8 -> trans_4;
+    trans_3 -> place_0;
+    trans_1 -> place_1;
+    trans_0 -> place_3;
+    trans_4 -> place_4;
+    trans_2 -> place_6;
+    trans_4 -> place_7;
+    trans_3 -> place_8;
+}

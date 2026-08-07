@@ -1,0 +1,7 @@
+=== Petri net connectivity diagnostics ===
+Totals: 42 places, 34 transitions
+
+Isolated places (2):
+  [10] AliasId { instance_id: NodeIndex(114), local: _4, array_index: None, field: None }
+  [11] AliasId { instance_id: NodeIndex(223), local: _2, array_index: None, field: None }
+

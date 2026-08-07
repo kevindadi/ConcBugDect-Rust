@@ -1,0 +1,8 @@
+=== Petri net connectivity diagnostics ===
+Totals: 24 places, 17 transitions
+
+Warnings (4):
+  - Place 'tikv_wrapper::util::{impl#0}::wl_start' (id=8) has no input arcs and initial marking 0 (never activated)
+  - Place 'tikv_wrapper::util::{impl#0}::wl_end' (id=9) has no output arcs (sink); verify this is intended
+  - Place 'tikv_wrapper::util::{impl#0}::rl_start' (id=10) has no input arcs and initial marking 0 (never activated)
+  - Place 'tikv_wrapper::util::{impl#0}::rl_end' (id=11) has no output arcs (sink); verify this is intended

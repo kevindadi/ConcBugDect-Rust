@@ -1,0 +1,26 @@
+====================== RustPTA Bug Report ======================
+
+Result        : BUG FOUND
+Mode          : datarace
+Bug count     : 1
+Severity      : high
+Confidence    : medium
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.003 s
+
+Developer explanation:
+  At least one reachable state enables conflicting unsafe memory operations; read/read pairs are omitted.
+
+--------------------- Incident datarace-1 ----------------------
+
+What happened:
+  Two unsafe accesses to Potential data race on variable 8 are simultaneously enabled without synchronization.
+
+Key unsafe accesses:
+  1. src/main.rs:21:9                 write PlaceTy { ty: i32, variant_index: None } (bb3)
+  2. src/main.rs:27:9                 write PlaceTy { ty: i32, variant_index: None } (bb3)
+
+Enabled state:
+  7 Petri-net places are marked in the witness state.
+
+
