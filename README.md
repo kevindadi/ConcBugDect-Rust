@@ -1,12 +1,8 @@
-# RustPTA
+# ConcBugDect-Rust
 
-RustPTA is a Petri-net-based static analyzer for Rust concurrency bugs. It runs as a Rust compiler driver, collects MIR-level information during compilation, translates the analyzed program into a Petri net, builds a state graph, and reports potential concurrency problems.
+ConcBugDect-Rust is a Petri-net-based static analyzer for Rust concurrency bugs. It runs as a Rust compiler driver, collects MIR-level information during compilation, translates the analyzed program into a Petri net, builds a state graph, and reports potential concurrency problems.
 
-The project is intended for three audiences:
-
-- users who want to run deadlock, data-race, atomicity, or points-to analysis on Rust programs;
-- researchers who want to inspect the MIR-to-Petri-net analysis pipeline;
-- contributors who want to extend the translator, Petri-net model, or detectors.
+The crate name is `conc_bug_detector`. The installed binaries remain `pn` and `cargo-pn` (`cargo pn`).
 
 ## Features
 
@@ -17,13 +13,12 @@ The project is intended for three audiences:
 - DOT visualization for call graphs, MIR, Petri nets, Petri-net reduction stages, and state graphs.
 - Optional Petri-net reduction before state-space construction.
 - Optional partial-order reduction for state-space exploration.
-- Local web viewer for browsing analysis runs and benchmark cases.
 
 ## How the analysis works
 
 1. `pn` runs as a rustc driver and receives the same Rust compiler inputs as a normal build.
 2. The compiler callback collects MIR-level function instances after rustc analysis.
-3. RustPTA builds a call graph and identifies configured concurrency APIs.
+3. The analyzer builds a call graph and identifies configured concurrency APIs.
 4. MIR is translated into a Petri net.
 5. Unless disabled, Petri-net reduction simplifies loops, sequences, and intermediate places.
 6. A state graph is constructed from the final Petri net.
@@ -44,17 +39,18 @@ rustup component add rust-src rustc-dev llvm-tools-preview
 cargo install --path .
 ```
 
-This installs the main binaries declared by the crate:
+This installs:
 
-- `pn` — rustc-driver entry point for direct analysis; need export LD_LIBRARY_PATH=$(rustc --print sysroot)/lib:$LD_LIBRARY_PATH
-- `cargo-pn` — Cargo wrapper used as `cargo pn`;
-- `pn-web` — local web viewer for generated artifacts.
+- `pn` — rustc-driver entry point for direct analysis  
+  On Linux/macOS you typically also need:
+  `export LD_LIBRARY_PATH="$(rustc --print sysroot)/lib:$LD_LIBRARY_PATH"`
+- `cargo-pn` — Cargo wrapper used as `cargo pn`
 
 ## Quick start
 
 ### Analyze a crate through Cargo
 
-Use `cargo pn` when analyzing a normal Cargo package. The `-p/--pn-crate` value is the logical output name used by RustPTA.
+Use `cargo pn` when analyzing a normal Cargo package. The `-p/--pn-crate` value is the logical output name used for artifacts.
 
 ```bash
 cargo pn -m deadlock -p your_crate --viz-callgraph --viz-petrinet --viz-stategraph
@@ -83,36 +79,25 @@ cargo run --bin pn -- \
   -- path/to/file.rs
 ```
 
-### Run benchmark crates
+### Batch-analyze crates under a directory
 
-The repository also contains standalone benchmark crates under `bench/`.
-
-For data-race benchmarks, install `pn` normally and run the target crate with `RUSTC_WRAPPER=pn` and `PN_FLAGS`:
+`./detect.sh` builds `pn` and runs analysis on every crate under a directory. Options after the directory are forwarded to `pn` via `PN_FLAGS` (`-p` is set per crate).
 
 ```bash
-cargo install --path . --bin pn --force
-RUSTC_WRAPPER="$(command -v pn)" \
-PN_FLAGS="-m datarace -p unsafe_write_read --pn-analysis-dir=tmp/unsafe_write_read" \
-  cargo build --manifest-path bench/data-race/unsafe-write-read/Cargo.toml
+./detect.sh path/to/crates/ -m deadlock --viz-petrinet --pn-analysis-dir=tmp/out
 ```
 
-For atomic-violation benchmarks, reinstall `pn` with the feature enabled before using `-m atomic`:
+Default flags when none are given:
 
-```bash
-cargo install --path . --bin pn --features atomic-violation --force
-RUSTC_WRAPPER="$(command -v pn)" \
-PN_FLAGS="-m atomic -p av1_load_store_store --pn-analysis-dir=tmp/av1" \
-  cargo build --manifest-path bench/atomic-violation/av1-load-store-store/Cargo.toml
+```text
+-m deadlock --pn-analysis-dir=<repo>/tmp
 ```
-
-The batch helper `./detect.sh` works well for deadlock and data-race crate directories. Atomic benchmarks still require a feature-enabled `pn` install. Inspect `datarace_report.txt` or `atomicity_report.txt` under the selected analysis directory after each run.
 
 ## Common flags
 
-
 | Flag                                                        | Meaning                                                                                             |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `-m, --mode <deadlock|datarace|atomic|all|pointsto>`        | Select the analysis mode. `atomic` is accepted only when the `atomic-violation` feature is enabled. |
+| `-m, --mode <deadlock\|datarace\|atomic\|all\|pointsto>`    | Select the analysis mode. `atomic` is accepted only when the `atomic-violation` feature is enabled. |
 | `-p, --pn-crate <name>`                                     | Set the target crate/output name for Cargo-based analysis.                                          |
 | `--pn-analysis-dir <path>`                                  | Set the output root for analysis artifacts.                                                         |
 | `--config <file>`                                           | Load configuration from a TOML file. Defaults to `pn.toml` when present.                            |
@@ -122,7 +107,7 @@ The batch helper `./detect.sh` works well for deadlock and data-race crate direc
 | `--viz-pointsto`                                            | Emit `points_to_report.txt`.                                                                        |
 | `--viz-mir`                                                 | Emit MIR DOT files under `mir/`.                                                                    |
 | `--viz-cir`                                                 | Emit `cir.yaml`.                                                                                    |
-| `--stop-after <mir|callgraph|pointsto|petrinet|stategraph>` | Stop after a pipeline stage for debugging.                                                          |
+| `--stop-after <mir\|callgraph\|pointsto\|petrinet\|stategraph>` | Stop after a pipeline stage for debugging.                                                      |
 | `--state-limit <N>`                                         | Cap state exploration. `0` means unlimited.                                                         |
 | `--full`                                                    | Translate all functions instead of using entry-reachable filtering.                                 |
 | `--crate-whitelist <a,b>`                                   | Analyze only the listed crate names.                                                                |
@@ -130,8 +115,7 @@ The batch helper `./detect.sh` works well for deadlock and data-race crate direc
 | `--no-reduce`                                               | Disable Petri-net reduction.                                                                        |
 | `--por`                                                     | Enable partial-order reduction.                                                                     |
 | `--no-concurrent-roots`                                     | Disable extra translation of functions that use configured concurrency APIs.                        |
-| `--alias-unknown-policy <conservative|optimistic>`          | Choose how unknown alias results affect Petri-net edges.                                            |
-
+| `--alias-unknown-policy <conservative\|optimistic>`          | Choose how unknown alias results affect Petri-net edges.                                            |
 
 ## Output files
 
@@ -142,7 +126,6 @@ Artifacts are written under:
 ```
 
 Typical files include:
-
 
 | File                                                 | Description                                                     |
 | ---------------------------------------------------- | --------------------------------------------------------------- |
@@ -161,10 +144,9 @@ Typical files include:
 | `mir/*.dot`                                          | MIR graph output when `--viz-mir` is enabled.                   |
 | `cir.yaml`                                           | Concurrency IR output when `--viz-cir` is enabled.              |
 
-
 ## Configuration
 
-RustPTA loads `pn.toml` by default when it exists. Use `--config <file>` to select another TOML configuration file.
+The analyzer loads `pn.toml` by default when it exists. Use `--config <file>` to select another TOML configuration file.
 
 Supported configuration areas include:
 
@@ -178,32 +160,30 @@ Supported configuration areas include:
 
 ## Project structure
 
+This repository is a single Cargo package (not a workspace).
 
-| Path                  | Responsibility                                                                                                                                  |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/bin/pn.rs`       | Direct `pn` binary entry point.                                                                                                                 |
-| `src/bin/cargo-pn.rs` | Cargo subcommand wrapper for `cargo pn`.                                                                                                        |
-| `src/bin/pn-web.rs`   | Local web viewer and artifact API.                                                                                                              |
-| `src/callback.rs`     | rustc callback pipeline, artifact writing, and detector dispatch.                                                                               |
-| `src/options.rs`      | CLI parsing and runtime option construction.                                                                                                    |
-| `src/config.rs`       | TOML configuration model and defaults.                                                                                                          |
-| `src/translate/`      | Call graph construction and MIR-to-Petri-net translation.                                                                                       |
-| `src/net/`            | Petri-net data structures, DOT output, incidence logic, and reductions.                                                                         |
-| `src/analysis/`       | State-space and reachability analysis.                                                                                                          |
-| `src/detect/`         | Deadlock, data-race, atomicity, and async bug detectors.                                                                                        |
-| `src/memory/`         | Ownership, unsafe-memory, and points-to analysis support. See [docs/pointer-analysis.md](docs/pointer-analysis.md) for the points-to data-flow. |
-| `src/report/`         | Text/JSON report structures.                                                                                                                    |
-| `src/util/`           | MIR DOT export, memory watcher, and helper utilities.                                                                                           |
-
+| Path                  | Responsibility                                                    |
+| --------------------- | ----------------------------------------------------------------- |
+| `src/bin/pn.rs`       | Direct `pn` binary entry point.                                   |
+| `src/bin/cargo-pn.rs` | Cargo subcommand wrapper for `cargo pn`.                          |
+| `src/callback.rs`     | rustc callback pipeline, artifact writing, and detector dispatch. |
+| `src/options.rs`      | CLI parsing and runtime option construction.                      |
+| `src/config.rs`       | TOML configuration model and defaults.                            |
+| `src/translate/`      | Call graph construction and MIR-to-Petri-net translation.         |
+| `src/net/`            | Petri-net data structures, DOT output, incidence logic, and reductions. |
+| `src/analysis/`       | State-space and reachability analysis.                            |
+| `src/detect/`         | Deadlock, data-race, and atomicity detectors.                     |
+| `src/memory/`         | Ownership, unsafe-memory, and points-to analysis support.         |
+| `src/report/`         | Text/JSON report structures.                                      |
+| `src/util/`           | MIR DOT export, memory watcher, and helper utilities.             |
+| `detect.sh`           | Batch helper for analyzing crates under a directory.              |
 
 ## Known limitations
 
-See [limitations.md](limitations.md) for the current developer-facing limitation notes. Important constraints include:
-
-- alias precision can under-approximate resource races in ambiguous cases;
-- Rust/C++11-style memory ordering is modeled heuristically;
-- recursion, panic/unwind paths, and complex drop ordering are not fully modeled;
-- deep analysis across FFI boundaries is not supported.
+- Alias precision can under-approximate resource races in ambiguous cases.
+- Rust/C++11-style memory ordering is modeled heuristically.
+- Recursion, panic/unwind paths, and complex drop ordering are not fully modeled.
+- Deep analysis across FFI boundaries is not supported.
 
 ## License
 
