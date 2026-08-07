@@ -79,12 +79,38 @@ cargo run --bin pn -- \
   -- path/to/file.rs
 ```
 
+### Run benchmark crates
+
+Standalone benchmarks live under [`bench/`](bench/) (from [RustPTA/bench](https://github.com/kevindadi/RustPTA/tree/master/bench)):
+
+- `bench/deadlock/`
+- `bench/data-race/`
+- `bench/atomic-violation/`
+
+For data-race benchmarks, install `pn` and analyze with `RUSTC_WRAPPER=pn` and `PN_FLAGS`:
+
+```bash
+cargo install --path . --bin pn --force
+RUSTC_WRAPPER="$(command -v pn)" \
+PN_FLAGS="-m datarace -p unsafe_write_read --pn-analysis-dir=tmp/unsafe_write_read" \
+  cargo build --manifest-path bench/data-race/unsafe-write-read/Cargo.toml
+```
+
+For atomic-violation benchmarks, reinstall `pn` with the feature enabled:
+
+```bash
+cargo install --path . --bin pn --features atomic-violation --force
+RUSTC_WRAPPER="$(command -v pn)" \
+PN_FLAGS="-m atomic -p av1_load_store_store --pn-analysis-dir=tmp/av1" \
+  cargo build --manifest-path bench/atomic-violation/av1-load-store-store/Cargo.toml
+```
+
 ### Batch-analyze crates under a directory
 
 `./detect.sh` builds `pn` and runs analysis on every crate under a directory. Options after the directory are forwarded to `pn` via `PN_FLAGS` (`-p` is set per crate).
 
 ```bash
-./detect.sh path/to/crates/ -m deadlock --viz-petrinet --pn-analysis-dir=tmp/out
+./detect.sh bench/deadlock/ -m deadlock --viz-petrinet --pn-analysis-dir=tmp/out
 ```
 
 Default flags when none are given:
@@ -177,6 +203,7 @@ This repository is a single Cargo package (not a workspace).
 | `src/report/`         | Text/JSON report structures.                                      |
 | `src/util/`           | MIR DOT export, memory watcher, and helper utilities.             |
 | `detect.sh`           | Batch helper for analyzing crates under a directory.              |
+| `bench/`              | Deadlock, data-race, and atomicity-violation benchmark crates.    |
 
 ## Known limitations
 
