@@ -1,8 +1,0 @@
-[package]
-name = "av2-store-store-load"
-version = "0.1.0"
-edition = "2021"
-
-[workspace]
-
-[dependencies]

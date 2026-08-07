@@ -1,14 +1,5 @@
-target/
-debug/
-release/
-rls/
-*.o
-.vscode/
-AGENTS.md
+**/target
+**/Cargo.lock
 
-Cargo.lock
-toys
-tools
-docs
-.claude
+.vscode
 .DS_Store

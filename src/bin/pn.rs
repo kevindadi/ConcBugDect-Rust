@@ -2,5 +2,5 @@
 #![warn(non_snake_case)]
 
 fn main() -> std::process::ExitCode {
-    rust_petri_net_analysis::run()
+    conc_bug_detector::run()
 }
