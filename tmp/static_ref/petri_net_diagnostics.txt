@@ -1,6 +1,0 @@
-=== Petri net connectivity diagnostics ===
-Totals: 15 places, 10 transitions
-
-Warnings (2):
-  - Place 'static_ref::{impl#0}::deref_start' (id=2) has no input arcs and initial marking 0 (never activated)
-  - Place 'static_ref::{impl#0}::deref_end' (id=3) has no output arcs (sink); verify this is intended

@@ -1,7 +1,0 @@
-=== Petri net connectivity diagnostics ===
-Totals: 14 places, 11 transitions
-
-Isolated places (2):
-  [1] issue71::main_end
-  [3] issue71::main::{closure#0}_end
-
