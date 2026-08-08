@@ -30,10 +30,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         target: &Option<BasicBlock>,
         bb_end: TransitionId,
     ) -> Option<TransitionType> {
-        if cfg!(feature = "atomic-violation") {
-            return None;
-        }
-
         // A lock acquisition *creates* a guard from a non-guard source
         // (`Mutex::lock(&mu)`, `Result::unwrap(result)`). Calls that merely
         // forward an existing guard (e.g. `fn wait(g: MutexGuard) -> MutexGuard`)
@@ -256,10 +252,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         bb_idx: &BasicBlock,
         span: &str,
     ) -> bool {
-        if cfg!(feature = "atomic-violation") {
-            return false;
-        }
-
         if has_pn_attribute(self.tcx, callee_def_id, "pn_condvar_notify")
             || self.key_api_regex.condvar_notify.is_match(callee_func_name)
         {
@@ -343,10 +335,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         bb_end: TransitionId,
         target: &Option<BasicBlock>,
     ) -> bool {
-        if cfg!(feature = "atomic-violation") {
-            return false;
-        }
-
         if self.resources.channel_places().is_empty() {
             return false;
         }
@@ -450,7 +438,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             return;
         }
 
-        if callee_func_name.contains("::drop") && !cfg!(feature = "atomic-violation") {
+        if callee_func_name.contains("::drop") {
             log::debug!("callee_func_name with drop: {:?}", callee_func_name);
             let lockguard_id = LockGuardId::new(
                 self.instance_id,

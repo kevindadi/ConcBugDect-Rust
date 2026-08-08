@@ -1,217 +1,417 @@
-use crate::analysis::reachability::{StateEdge, StateGraph, StateNode};
+//! Unified atomicity-violation detector.
+//!
+//! Runs the classic AV1/AV2/AV3 witness search over the *shared* state graph
+//! instead of re-exploring the Petri net, so all detectors consume a single
+//! reachability graph. Memory-ordering constraints are enforced structurally by
+//! the ordering-segment places in the net, so the witness search itself only
+//! matches load/store kinds and thread/alias identity.
+
+use crate::analysis::reachability::StateGraph;
 use crate::concurrency::atomic::AtomicOrdering;
 use crate::memory::pointsto::AliasId;
 use crate::net::ids::TransitionId;
 use crate::net::index_vec::Idx;
 use crate::net::structure::TransitionType;
-use crate::report::{AtomicOperation, AtomicReport, AtomicViolation, ViolationPattern};
+use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
+use petgraph::Direction;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use petgraph::{Direction, stable_graph::StableGraph};
-use rustc_data_structures::fx::{FxHashMap, FxHashSet};
+use rustc_data_structures::fx::FxHashSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-pub struct AtomicityViolationDetector<'a> {
-    state_graph: &'a StateGraph,
+const DEFAULT_MAX_STATES: usize = 200_000;
+const DEFAULT_MAX_DEPTH: usize = 10_000;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EvKind {
+    Load,
+    Store,
+}
+
+#[derive(Debug, Clone)]
+struct Ev {
+    tid: usize,
+    alias: AliasId,
+    kind: EvKind,
+    ord: AtomicOrdering,
+    span: String,
+}
+
+fn parse_event(transition_type: &TransitionType) -> Option<Ev> {
+    match transition_type {
+        TransitionType::AtomicLoad(alias, order, span, tid) => Some(Ev {
+            tid: *tid,
+            alias: *alias,
+            kind: EvKind::Load,
+            ord: *order,
+            span: span.clone(),
+        }),
+        TransitionType::AtomicStore(alias, order, span, tid) => Some(Ev {
+            tid: *tid,
+            alias: *alias,
+            kind: EvKind::Store,
+            ord: *order,
+            span: span.clone(),
+        }),
+        TransitionType::AtomicCmpXchg(alias, success, _failure, span, tid) => Some(Ev {
+            tid: *tid,
+            alias: *alias,
+            kind: EvKind::Store,
+            ord: *success,
+            span: span.clone(),
+        }),
+        _ => None,
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Rule {
+    id: usize,
+    start: EvKind,
+    mid: EvKind,
+    end: EvKind,
+}
+
+const RULES: [Rule; 3] = [
+    // AV1: read, then an intruding write between read and the writer's write.
+    Rule {
+        id: 0,
+        start: EvKind::Load,
+        mid: EvKind::Store,
+        end: EvKind::Store,
+    },
+    // AV2: write, an intruding write, then the original thread's read.
+    Rule {
+        id: 1,
+        start: EvKind::Store,
+        mid: EvKind::Store,
+        end: EvKind::Load,
+    },
+    // AV3: read, an intruding write, then the original thread's read.
+    Rule {
+        id: 2,
+        start: EvKind::Load,
+        mid: EvKind::Store,
+        end: EvKind::Load,
+    },
+];
+
+#[derive(Debug, Clone)]
+enum WitnessKind {
+    Av1,
+    Av2,
+    Av3,
+}
+
+#[derive(Debug, Clone)]
+struct Witness {
+    kind: WitnessKind,
+    start: Ev,
+    mid: Ev,
+    end: Ev,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct AliasKey {
+    instance: usize,
+    local: usize,
+}
+
+impl AliasKey {
+    fn new(alias: AliasId) -> Self {
+        Self {
+            instance: alias.instance_id.index(),
+            local: alias.local.index(),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct PatternState {
+    last_start: BTreeMap<(AliasKey, usize), usize>,
+    saw_mid_after_start: BTreeMap<(AliasKey, usize), BTreeMap<usize, usize>>,
 }
 
 #[derive(Clone)]
-struct AtomicOp {
-    var_id: AliasId,
-    ordering: AtomicOrdering,
-    span: String,
-    thread_id: usize,
+struct Frame {
+    node: NodeIndex,
+    trace: Vec<TransitionId>,
+    events: Vec<Option<Ev>>,
+    pattern_states: [PatternState; RULES.len()],
+}
+
+impl Frame {
+    fn new(node: NodeIndex) -> Self {
+        Self {
+            node,
+            trace: Vec::new(),
+            events: Vec::new(),
+            pattern_states: std::array::from_fn(|_| PatternState::default()),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct StateFingerprint {
+    node: NodeIndex,
+    last_starts: Vec<(usize, usize, usize, usize, usize)>,
+    saw_entries: Vec<(usize, usize, usize, usize, usize, usize)>,
+}
+
+impl StateFingerprint {
+    fn from_frame(frame: &Frame) -> Self {
+        let mut last_starts = Vec::new();
+        let mut saw_entries = Vec::new();
+
+        for (rule_idx, state) in frame.pattern_states.iter().enumerate() {
+            for ((alias_key, tid_i), start_idx) in state.last_start.iter() {
+                last_starts.push((
+                    rule_idx,
+                    alias_key.instance,
+                    alias_key.local,
+                    *tid_i,
+                    *start_idx,
+                ));
+            }
+            for ((alias_key, tid_i), intruders) in state.saw_mid_after_start.iter() {
+                for (&tid_j, &mid_idx) in intruders.iter() {
+                    saw_entries.push((
+                        rule_idx,
+                        alias_key.instance,
+                        alias_key.local,
+                        *tid_i,
+                        tid_j,
+                        mid_idx,
+                    ));
+                }
+            }
+        }
+
+        last_starts.sort_unstable();
+        saw_entries.sort_unstable();
+
+        Self {
+            node: frame.node,
+            last_starts,
+            saw_entries,
+        }
+    }
+}
+
+fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usize) -> Vec<Witness> {
+    if max_states == 0 {
+        return Vec::new();
+    }
+
+    let graph = &state_graph.graph;
+    let mut witnesses = Vec::new();
+    let mut seen: BTreeSet<(usize, TransitionId, TransitionId, TransitionId)> = BTreeSet::new();
+    let mut visited: FxHashSet<StateFingerprint> = FxHashSet::default();
+
+    let mut stack = vec![Frame::new(state_graph.initial)];
+
+    while let Some(frame) = stack.pop() {
+        if visited.len() >= max_states || frame.trace.len() >= max_depth {
+            continue;
+        }
+
+        let fingerprint = StateFingerprint::from_frame(&frame);
+        if !visited.insert(fingerprint) {
+            continue;
+        }
+
+        let mut edges: Vec<_> = graph
+            .edges_directed(frame.node, Direction::Outgoing)
+            .collect();
+        edges.sort_by_key(|edge| edge.weight().transition.id.index());
+
+        for edge in edges {
+            if frame.trace.len() >= max_depth || visited.len() >= max_states {
+                continue;
+            }
+
+            let transition = &edge.weight().transition;
+            let mut next_frame = frame.clone();
+            next_frame.node = edge.target();
+            next_frame.trace.push(transition.id);
+
+            let event = parse_event(&transition.transition_type);
+            next_frame.events.push(event.clone());
+
+            if let Some(event) = &event {
+                for rule in RULES.iter() {
+                    try_match(&mut next_frame, rule, event, &mut witnesses, &mut seen);
+                }
+            }
+
+            stack.push(next_frame);
+        }
+    }
+
+    witnesses
+}
+
+fn try_match(
+    frame: &mut Frame,
+    rule: &Rule,
+    ev: &Ev,
+    out: &mut Vec<Witness>,
+    seen: &mut BTreeSet<(usize, TransitionId, TransitionId, TransitionId)>,
+) {
+    let current_idx = frame.trace.len().saturating_sub(1);
+    let alias_key = AliasKey::new(ev.alias);
+    let state = &mut frame.pattern_states[rule.id];
+    let key = (alias_key, ev.tid);
+
+    if ev.kind == rule.end {
+        if let Some(&start_idx) = state.last_start.get(&key) {
+            if let Some(intruders) = state.saw_mid_after_start.get_mut(&key) {
+                let mut to_remove = Vec::new();
+                for (&tid_j, &mid_idx) in intruders.iter() {
+                    if start_idx < mid_idx && mid_idx < current_idx {
+                        let start_tr = frame.trace[start_idx];
+                        let mid_tr = frame.trace[mid_idx];
+                        let end_tr = frame.trace[current_idx];
+                        if seen.insert((rule.id, start_tr, mid_tr, end_tr)) {
+                            let kind = match rule.id {
+                                0 => WitnessKind::Av1,
+                                1 => WitnessKind::Av2,
+                                2 => WitnessKind::Av3,
+                                _ => unreachable!(),
+                            };
+                            out.push(Witness {
+                                kind,
+                                start: frame.events[start_idx]
+                                    .clone()
+                                    .expect("trace event must be present"),
+                                mid: frame.events[mid_idx]
+                                    .clone()
+                                    .expect("trace event must be present"),
+                                end: ev.clone(),
+                            });
+                        }
+                        to_remove.push(tid_j);
+                    }
+                }
+                for tid_j in to_remove {
+                    intruders.remove(&tid_j);
+                }
+                if intruders.is_empty() {
+                    state.saw_mid_after_start.remove(&key);
+                }
+            }
+        }
+    }
+
+    if ev.kind == rule.mid {
+        for ((start_key, tid_i), _) in state.last_start.iter() {
+            if *start_key == alias_key && *tid_i != ev.tid {
+                state
+                    .saw_mid_after_start
+                    .entry((*start_key, *tid_i))
+                    .or_default()
+                    .insert(ev.tid, current_idx);
+            }
+        }
+    }
+
+    if ev.kind == rule.start {
+        state.last_start.insert(key, current_idx);
+        state.saw_mid_after_start.remove(&key);
+    }
+}
+
+/// Look up the `Ev` recorded for a position in the trace. Every trace position
+/// that produced an atomic event stored it alongside the transition id, so
+/// start and mid events are recoverable when a witness completes.
+pub struct AtomicityViolationDetector<'a> {
+    state_graph: &'a StateGraph,
+    max_states: usize,
+    max_depth: usize,
 }
 
 impl<'a> AtomicityViolationDetector<'a> {
     pub fn new(state_graph: &'a StateGraph) -> Self {
-        Self { state_graph }
+        Self {
+            state_graph,
+            max_states: DEFAULT_MAX_STATES,
+            max_depth: DEFAULT_MAX_DEPTH,
+        }
+    }
+
+    pub fn with_limits(state_graph: &'a StateGraph, max_states: usize, max_depth: usize) -> Self {
+        Self {
+            state_graph,
+            max_states,
+            max_depth,
+        }
     }
 
     pub fn detect(&self) -> AtomicReport {
         let start_time = Instant::now();
         let mut report = AtomicReport::new("Petri Net Atomicity Violation Detector".to_string());
 
-        let (loads, stores) = self.collect_atomic_operations();
+        let witnesses = detect_witnesses(self.state_graph, self.max_states, self.max_depth);
 
-        let violations = self.check_violations(loads, stores);
-
-        if !violations.is_empty() {
+        if !witnesses.is_empty() {
             report.has_violation = true;
-            report.violation_count = violations.len();
-            report.violations = violations;
+            report.violations = dedupe_patterns(&witnesses);
+            report.violation_count = report.violations.len();
         }
 
         report.analysis_time = start_time.elapsed();
         report
     }
+}
 
-    fn collect_atomic_operations(
-        &self,
-    ) -> (
-        FxHashMap<TransitionId, AtomicOp>,
-        FxHashMap<TransitionId, AtomicOp>,
-    ) {
-        let mut loads = FxHashMap::default();
-        let mut stores = FxHashMap::default();
-
-        for edge in self.state_graph.graph.edge_weights() {
-            match &edge.transition.transition_type {
-                TransitionType::AtomicLoad(var_id, ordering, span, thread_id) => {
-                    loads.entry(edge.transition.id).or_insert(AtomicOp {
-                        var_id: var_id.clone(),
-                        ordering: *ordering,
-                        span: span.clone(),
-                        thread_id: *thread_id,
-                    });
-                }
-                TransitionType::AtomicStore(var_id, ordering, span, thread_id) => {
-                    stores.entry(edge.transition.id).or_insert(AtomicOp {
-                        var_id: var_id.clone(),
-                        ordering: *ordering,
-                        span: span.clone(),
-                        thread_id: *thread_id,
-                    });
-                }
-                _ => {}
-            }
-        }
-        (loads, stores)
+fn atomic_op(operation_type: &str, ev: &Ev) -> AtomicOperation {
+    AtomicOperation {
+        operation_type: operation_type.to_string(),
+        ordering: format!("{:?}", ev.ord),
+        variable: format!("{:?}", ev.alias),
+        location: ev.span.clone(),
     }
+}
 
-    fn check_violations(
-        &self,
-        loads: FxHashMap<TransitionId, AtomicOp>,
-        stores: FxHashMap<TransitionId, AtomicOp>,
-    ) -> Vec<ViolationPattern> {
-        let mut all_violations = Vec::new();
-        let graph = &self.state_graph.graph;
+fn dedupe_patterns(witnesses: &[Witness]) -> Vec<ViolationPattern> {
+    let mut patterns = Vec::new();
 
-        for (load_trans, load_op) in loads {
-            for state in graph.node_indices() {
-                for edge in graph.edges_directed(state, Direction::Outgoing) {
-                    if edge.weight().transition.id == load_trans {
-                        if let Some(violation) =
-                            Self::check_state_for_violation(graph, state, &load_op, &stores)
-                        {
-                            all_violations.push(violation);
-                        }
-                    }
-                }
-            }
-        }
+    for witness in witnesses {
+        let (load, stores) = match witness.kind {
+            WitnessKind::Av1 => (
+                atomic_op(&format!("load@tid{}", witness.start.tid), &witness.start),
+                vec![
+                    atomic_op(&format!("store@tid{}", witness.mid.tid), &witness.mid),
+                    atomic_op(&format!("store@tid{}", witness.end.tid), &witness.end),
+                ],
+            ),
+            WitnessKind::Av2 => (
+                atomic_op(&format!("load@tid{}", witness.end.tid), &witness.end),
+                vec![
+                    atomic_op(&format!("store@tid{}", witness.start.tid), &witness.start),
+                    atomic_op(&format!("store@tid{}", witness.mid.tid), &witness.mid),
+                ],
+            ),
+            WitnessKind::Av3 => (
+                atomic_op(&format!("load@tid{}", witness.start.tid), &witness.start),
+                vec![atomic_op(
+                    &format!("store@tid{}", witness.mid.tid),
+                    &witness.mid,
+                )],
+            ),
+        };
 
-        let mut pattern_map: FxHashMap<ViolationPattern, Vec<Vec<(usize, u8)>>> =
-            FxHashMap::default();
-
-        for violation in all_violations {
-            let pattern = ViolationPattern {
-                load_op: AtomicOperation {
-                    operation_type: "load".to_string(),
-                    ordering: violation.pattern.load_op.ordering.clone(),
-                    variable: violation.pattern.load_op.variable.clone(),
-                    location: violation.pattern.load_op.location.clone(),
-                },
-                store_ops: violation.pattern.store_ops.clone(),
-            };
-
-            let mut states = violation.states.clone();
-            states.sort();
-            pattern_map.entry(pattern).or_default().push(states.clone());
-        }
-
-        pattern_map
-            .into_iter()
-            .map(|(pattern, _)| pattern)
-            .collect()
-    }
-
-    fn check_state_for_violation(
-        graph: &StableGraph<StateNode, StateEdge>,
-        load_state: NodeIndex,
-        load_op: &AtomicOp,
-        stores: &FxHashMap<TransitionId, AtomicOp>,
-    ) -> Option<AtomicViolation> {
-        let mut visited = FxHashSet::default();
-        let mut write_operations = FxHashSet::default();
-        let mut stack = vec![load_state];
-
-        while let Some(current) = stack.pop() {
-            if !visited.insert(current) {
-                continue;
-            }
-
-            for edge in graph.edges_directed(current, Direction::Incoming) {
-                let source = edge.source();
-                let transition = edge.weight().transition.id;
-                let transition_type = &edge.weight().transition.transition_type;
-
-                if let TransitionType::Start(thread_id) = transition_type {
-                    if *thread_id == load_op.thread_id {
-                        break;
-                    }
-                }
-
-                if let Some(store_op) = stores.get(&transition) {
-                    if store_op.var_id == load_op.var_id
-                        && Self::ordering_allows(store_op.ordering, load_op.ordering)
-                    {
-                        write_operations.insert(AtomicOperation {
-                            operation_type: "store".to_string(),
-                            ordering: format!("{:?}", store_op.ordering),
-                            variable: format!("{:?}", store_op.var_id),
-                            location: store_op.span.clone(),
-                        });
-                    }
-                }
-
-                stack.push(source);
-            }
-        }
-
-        let mut write_operations: Vec<_> = write_operations.into_iter().collect();
-        if write_operations.len() >= 2 {
-            write_operations.sort_by(|a, b| a.location.cmp(&b.location));
-
-            Some(AtomicViolation {
-                pattern: ViolationPattern {
-                    load_op: AtomicOperation {
-                        operation_type: "load".to_string(),
-                        ordering: format!("{:?}", load_op.ordering),
-                        variable: format!("{:?}", load_op.var_id),
-                        location: load_op.span.clone(),
-                    },
-                    store_ops: write_operations,
-                },
-                states: graph[load_state]
-                    .marking
-                    .iter()
-                    .filter_map(|(place_id, tokens)| {
-                        if *tokens == 0 {
-                            return None;
-                        }
-                        Some((place_id.index(), (*tokens).min(u8::MAX as u64) as u8))
-                    })
-                    .collect(),
-            })
-        } else {
-            None
+        let pattern = ViolationPattern {
+            load_op: load,
+            store_ops: stores,
+        };
+        if !patterns.contains(&pattern) {
+            patterns.push(pattern);
         }
     }
 
-    /// Ordering guard: only relate load/store when store order is >= load under the chosen partial order.
-    /// Matches common Acquire/Release approximations: Relaxed pairs with any store; SeqCst only with SeqCst;
-    /// AcqRel doubles as Release plus SeqCst fallback; Release alone does not satisfy standalone reads.
-    fn ordering_allows(store: AtomicOrdering, load: AtomicOrdering) -> bool {
-        use AtomicOrdering::*;
-        match load {
-            Relaxed => true,
-            Acquire => matches!(store, Release | AcqRel | SeqCst),
-            SeqCst => matches!(store, SeqCst),
-            AcqRel => matches!(store, SeqCst | AcqRel),
-            Release => false,
-        }
-    }
+    patterns
 }
 
 #[cfg(test)]

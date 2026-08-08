@@ -17,9 +17,7 @@ use crate::{
     net::{Net, PlaceId, TransitionId},
     translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry},
 };
-use bb_graph::BasicBlockGraph;
-#[cfg(feature = "atomic-violation")]
-use bb_graph::SegState;
+use bb_graph::{BasicBlockGraph, SegState};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{
@@ -60,7 +58,6 @@ pub struct BodyToPetriNet<'translate, 'analysis, 'tcx> {
     option_vec_source: FxHashMap<Local, Local>,
     handle_vec_source: FxHashMap<Local, Local>,
     joinhandle_vec_locals: FxHashSet<Local>,
-    #[cfg(feature = "atomic-violation")]
     seg: SegState,
 }
 
@@ -153,11 +150,9 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             option_vec_source: FxHashMap::default(),
             handle_vec_source: FxHashMap::default(),
             joinhandle_vec_locals,
-            #[cfg(feature = "atomic-violation")]
             seg: SegState::default(),
         };
 
-        #[cfg(feature = "atomic-violation")]
         {
             let tid = s.instance_id.index();
             s.seg.seg_index.insert(tid, 0);

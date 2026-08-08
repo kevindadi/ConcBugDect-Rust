@@ -30,25 +30,16 @@ pub enum DetectorKind {
 }
 
 fn make_options_parser() -> clap::Command {
-    let analysis_help = if cfg!(feature = "atomic-violation") {
-        "Analysis mode: deadlock, datarace, atomic (requires feature), all, or pointsto (standalone pointer analysis)."
-    } else {
-        "Analysis mode: deadlock, datarace, all, or pointsto (standalone pointer analysis)."
-    };
+    let analysis_help =
+        "Analysis mode: deadlock, datarace, atomic, all, or pointsto (standalone pointer analysis).";
 
-    let analysis_arg = {
-        let arg = Arg::new("analysis_mode")
-            .short('m')
-            .long("mode")
-            .help(analysis_help)
-            .default_values(&["deadlock"])
-            .hide_default_value(true);
-        if cfg!(feature = "atomic-violation") {
-            arg.value_parser(["deadlock", "datarace", "atomic", "all", "pointsto"])
-        } else {
-            arg.value_parser(["deadlock", "datarace", "all", "pointsto"])
-        }
-    };
+    let analysis_arg = Arg::new("analysis_mode")
+        .short('m')
+        .long("mode")
+        .help(analysis_help)
+        .default_values(&["deadlock"])
+        .hide_default_value(true)
+        .value_parser(["deadlock", "datarace", "atomic", "all", "pointsto"]);
 
     let parser = Command::new("pn")
         .no_binary_name(true)
@@ -322,13 +313,6 @@ impl Options {
             "pointsto" => DetectorKind::PointsTo,
             _ => DetectorKind::Deadlock,
         };
-
-        if matches!(self.detector_kind, DetectorKind::AtomicityViolation)
-            && !cfg!(feature = "atomic-violation")
-        {
-            log::warn!("atomic-violation feature is disabled; falling back to deadlock detection.");
-            self.detector_kind = DetectorKind::Deadlock;
-        }
 
         self.input_file = matches.get_one::<String>("input_file").map(PathBuf::from);
         self.crate_name = matches

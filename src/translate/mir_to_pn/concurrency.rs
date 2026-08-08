@@ -1,15 +1,11 @@
 //! Concurrency primitives: locks, condvars, channels, atomics.
 
 use super::BodyToPetriNet;
-#[cfg(feature = "atomic-violation")]
-use crate::net::{Place, structure::PlaceType};
 use crate::{
     concurrency::atomic::AtomicOrdering,
     memory::pointsto::AliasId,
-    net::{PlaceId, TransitionId, TransitionType},
+    net::{Place, PlaceId, Transition, TransitionId, TransitionType, structure::PlaceType},
 };
-#[cfg(not(feature = "atomic-violation"))]
-use crate::net::Transition;
 use rustc_middle::mir::BasicBlock;
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
@@ -33,24 +29,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         matches
     }
 
-    #[cfg(feature = "atomic-violation")]
-    pub(super) fn handle_atomic_basic_op<F>(
-        &mut self,
-        op_name: &str,
-        current_id: AliasId,
-        bb_end: TransitionId,
-        target: &Option<BasicBlock>,
-        bb_idx: &BasicBlock,
-        span: &str,
-        _transition_builder: F,
-    ) -> bool
-    where
-        F: FnMut(&AliasId, &AtomicOrdering, String) -> TransitionType,
-    {
-        self.link_atomic_operation(op_name, current_id, bb_end, target, bb_idx, span)
-    }
-
-    #[cfg(not(feature = "atomic-violation"))]
     pub(super) fn handle_atomic_basic_op<F>(
         &mut self,
         op_name: &str,
@@ -68,6 +46,17 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         if matches.is_empty() {
             return false;
         }
+
+        let Some(order) = self.resources.atomic_orders().get(&current_id).copied() else {
+            log::warn!(
+                "[atomicity] missing ordering for atomic {} @ {:?}",
+                op_name,
+                span
+            );
+            return false;
+        };
+
+        let tid = self.instance_id.index();
         let span_owned = span.to_string();
         let intermediate_name = format!(
             "atomic_{}_in_{:?}_{:?}",
@@ -78,107 +67,45 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         let intermediate_id = crate::bb_place!(self.net, intermediate_name, span_owned.clone());
         self.net.add_input_arc(intermediate_id, bb_end, 1);
 
-        if let Some(order) = self.resources.atomic_orders().get(&current_id) {
-            for (idx, (alias_id, resource_place)) in matches.into_iter().enumerate() {
-                let transition_name = format!(
-                    "atomic_{:?}_{}_{:?}_{:?}_{}",
-                    self.instance_id.index(),
-                    op_name,
-                    order,
-                    bb_idx.index(),
-                    idx
-                );
-                let transition_type = transition_builder(&alias_id, order, span_owned.clone());
-                let transition =
-                    Transition::new_with_transition_type(transition_name, transition_type);
-                let transition_id = self.net.add_transition(transition);
+        // Ordering segments are computed once per MIR operation and shared by
+        // every alias alternative, so an acquire/release/seqcst op advances the
+        // thread's segment exactly once no matter which candidate fires.
+        let seg_arcs = self.ordering_seg_arcs(tid, order);
 
-                self.net.add_output_arc(intermediate_id, transition_id, 1);
-                self.net.add_input_arc(resource_place, transition_id, 1);
-                self.net.add_output_arc(resource_place, transition_id, 1);
-
-                if let Some(t) = target {
-                    self.net
-                        .add_input_arc(self.bb_graph.start(*t), transition_id, 1);
-                }
-            }
-        }
-        true
-    }
-
-    #[cfg(feature = "atomic-violation")]
-    fn link_atomic_operation(
-        &mut self,
-        op_name: &str,
-        current_id: AliasId,
-        bb_end: TransitionId,
-        target: &Option<BasicBlock>,
-        bb_idx: &BasicBlock,
-        span: &str,
-    ) -> bool {
-        let matches = self.find_atomic_matches(&current_id);
-        if matches.is_empty() {
-            log::warn!("no alias found for atomic operation in {:?}", span);
-            return false;
-        }
-
-        let Some(order) = self.resources.atomic_orders().get(&current_id).copied() else {
-            log::warn!(
-                "[atomic-violation] missing ordering for {} @ {:?}",
-                op_name,
-                span
-            );
-            self.connect_to_target(*bb_idx, bb_end, target);
-            return true;
-        };
-
-        let tid = self.instance_id.index();
-        let span_owned = span.to_string();
-        let alias_id = matches.first().map(|(a, _)| *a).unwrap_or(current_id);
-
-        let transition_name = {
-            let name = format!(
-                "atomic_{:?}_{}_ord={:?}_bb={}",
+        for (idx, (alias_id, resource_place)) in matches.into_iter().enumerate() {
+            let transition_name = format!(
+                "atomic_{:?}_{}_{:?}_{:?}_{}",
                 self.instance_id.index(),
                 op_name,
                 order,
-                bb_idx.index()
+                bb_idx.index(),
+                idx
             );
-            if let Some(transition) = self.net.get_transition_mut(bb_end) {
-                transition.name = name.clone();
-                transition.transition_type = match op_name {
-                    "load" => TransitionType::AtomicLoad(alias_id, order, span_owned.clone(), tid),
-                    "store" => {
-                        TransitionType::AtomicStore(alias_id, order, span_owned.clone(), tid)
-                    }
-                    _ => transition.transition_type.clone(),
-                };
-            } else {
-                return false;
+            let transition_type = transition_builder(&alias_id, &order, span_owned.clone());
+            let transition =
+                Transition::new_with_transition_type(transition_name, transition_type);
+            let transition_id = self.net.add_transition(transition);
+
+            self.net.add_output_arc(intermediate_id, transition_id, 1);
+            self.net.add_input_arc(resource_place, transition_id, 1);
+            self.net.add_output_arc(resource_place, transition_id, 1);
+
+            for &(place_id, is_input) in &seg_arcs {
+                if is_input {
+                    self.net.add_input_arc(place_id, transition_id, 1);
+                } else {
+                    self.net.add_output_arc(place_id, transition_id, 1);
+                }
             }
-            name
-        };
 
-        for (_, resource_place) in matches {
-            self.net.add_input_arc(resource_place, bb_end, 1);
-            self.net.add_output_arc(resource_place, bb_end, 1);
+            if let Some(t) = target {
+                self.net
+                    .add_input_arc(self.bb_graph.start(*t), transition_id, 1);
+            }
         }
-        self.wire_segment_for_ordering(bb_end, tid, order);
-        self.connect_to_target(*bb_idx, bb_end, target);
-
-        log::debug!(
-            "[atomic-violation] wired {} at {:?} with ord={:?}, tid={}, alias={:?}",
-            transition_name,
-            span,
-            order,
-            tid,
-            alias_id
-        );
-
         true
     }
 
-    #[cfg(feature = "atomic-violation")]
     pub(super) fn ensure_seg_place(&mut self, tid: usize, seg: usize) -> PlaceId {
         if let Some(&place_id) = self.seg.seg_place_of.get(&(tid, seg)) {
             return place_id;
@@ -192,7 +119,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         place_id
     }
 
-    #[cfg(feature = "atomic-violation")]
     fn ensure_seqcst_place(&mut self) -> PlaceId {
         if let Some(place_id) = self.seg.seqcst_place {
             return place_id;
@@ -210,32 +136,38 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         place_id
     }
 
-    #[cfg(feature = "atomic-violation")]
-    fn wire_segment_for_ordering(&mut self, bb_end: TransitionId, tid: usize, ord: AtomicOrdering) {
+    /// Segment arcs for one atomic operation: `(place, is_input)`.
+    /// Relaxed keeps the current segment token in place; acquire/release/acqrel
+    /// advance the per-thread segment; seqcst additionally synchronizes on a
+    /// global place that serializes all seqcst operations across threads.
+    fn ordering_seg_arcs(&mut self, tid: usize, ord: AtomicOrdering) -> Vec<(PlaceId, bool)> {
+        let mut arcs = Vec::new();
         let current_seg = self.seg.current_seg(tid);
         let current_place = self.ensure_seg_place(tid, current_seg);
 
         match ord {
             AtomicOrdering::Relaxed => {
-                self.net.add_input_arc(current_place, bb_end, 1);
-                self.net.add_output_arc(current_place, bb_end, 1);
+                arcs.push((current_place, true));
+                arcs.push((current_place, false));
             }
             AtomicOrdering::Acquire | AtomicOrdering::Release | AtomicOrdering::AcqRel => {
                 let next_seg = self.seg.bump(tid);
                 let next_place = self.ensure_seg_place(tid, next_seg);
-                self.net.add_input_arc(current_place, bb_end, 1);
-                self.net.add_output_arc(next_place, bb_end, 1);
+                arcs.push((current_place, true));
+                arcs.push((next_place, false));
             }
             AtomicOrdering::SeqCst => {
                 let next_seg = self.seg.bump(tid);
                 let next_place = self.ensure_seg_place(tid, next_seg);
-                self.net.add_input_arc(current_place, bb_end, 1);
-                self.net.add_output_arc(next_place, bb_end, 1);
                 let seqcst_place = self.ensure_seqcst_place();
-                self.net.add_input_arc(seqcst_place, bb_end, 1);
-                self.net.add_output_arc(seqcst_place, bb_end, 1);
+                arcs.push((current_place, true));
+                arcs.push((next_place, false));
+                arcs.push((seqcst_place, true));
+                arcs.push((seqcst_place, false));
             }
         }
+
+        arcs
     }
 
     pub(super) fn find_channel_place(&mut self, channel_alias: AliasId) -> Option<PlaceId> {

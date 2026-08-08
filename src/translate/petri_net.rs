@@ -275,15 +275,6 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         log::info!("Construct Function Start and End Places");
         self.construct_func();
 
-        if cfg!(feature = "atomic-violation") {
-            self.construct_atomic_resources();
-            let key_api_regex = KeyApiRegex::new(&self.options.config);
-            self.translate_all_functions(&key_api_regex);
-            log::info!("Visitor Function Body Complete!");
-            log::info!("Construct Petri Net Time: {:?}", start_time.elapsed());
-            return;
-        }
-
         self.construct_lock_with_dfs();
         self.construct_channel_resources();
         self.construct_atomic_resources();

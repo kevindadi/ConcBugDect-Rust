@@ -40,7 +40,6 @@ impl BasicBlockGraph {
     }
 }
 
-#[cfg(feature = "atomic-violation")]
 #[derive(Default)]
 pub(super) struct SegState {
     pub seg_index: FxHashMap<usize, usize>,
@@ -48,7 +47,6 @@ pub(super) struct SegState {
     pub seqcst_place: Option<PlaceId>,
 }
 
-#[cfg(feature = "atomic-violation")]
 impl SegState {
     pub fn current_seg(&self, tid: usize) -> usize {
         *self.seg_index.get(&tid).unwrap_or(&0)

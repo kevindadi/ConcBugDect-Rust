@@ -26,14 +26,6 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         self.net
             .add_input_arc(self.bb_graph.last(*bb_idx), bb_end, 1);
 
-        if cfg!(feature = "atomic-violation") {
-            if !self.is_back_edge(*bb_idx, *target) {
-                self.net
-                    .add_output_arc(self.bb_graph.start(*target), bb_end, 1);
-            }
-            return;
-        }
-
         if !bb.is_cleanup {
             let lockguard_id = LockGuardId::new(self.instance_id, place.local);
 

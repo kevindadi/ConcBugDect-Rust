@@ -360,16 +360,14 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         let lhs_proj = Self::proj_kinds(place.projection);
         let lhs_local = place.local.as_u32();
         match rvalue {
-            Rvalue::Aggregate(box kind, fields) => {
-                match kind {
-                    AggregateKind::Closure(def_id, substs) => {
-                        self.process_closure_aggregate(lhs_local, *def_id, substs, fields);
-                    }
-                    _ => {
-                        self.assign_aggregate(lhs_local, &lhs_proj, kind, fields);
-                    }
+            Rvalue::Aggregate(box kind, fields) => match kind {
+                AggregateKind::Closure(def_id, substs) => {
+                    self.process_closure_aggregate(lhs_local, *def_id, substs, fields);
                 }
-            }
+                _ => {
+                    self.assign_aggregate(lhs_local, &lhs_proj, kind, fields);
+                }
+            },
             Rvalue::Ref(_, _, src) | Rvalue::RawPtr(_, src) => {
                 if src.projection.is_empty() {
                     match self.body.local_kind(src.local) {
@@ -446,7 +444,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         let clo_heap = self.arena.heap(
             AllocSite {
                 func: self.func,
-                bb: 0, // 闭包定义不是 call site，用 0
+                bb: 0, // 闭包定义不是 call site,用 0
                 idx: self.call_counter,
             },
             empty,
@@ -461,7 +459,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             if let Some(dst) = self.arena.project(clo_heap, field_path) {
                 self.constraints.add(Constraint::Copy { dst, src: value });
             }
-            // 如果 upvar 是引用类型，还需要 AddressOf
+            // 如果 upvar 是引用类型,还需要 AddressOf
             let upvar_ty = upvar_tys.get(i.as_usize());
             if let Some(upvar_ty) = upvar_ty {
                 if upvar_ty.is_ref() {
@@ -469,7 +467,10 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                         let mut w = self.walk();
                         w.fresh()
                     };
-                    self.constraints.add(Constraint::AddressOf { dst: addr, obj: value });
+                    self.constraints.add(Constraint::AddressOf {
+                        dst: addr,
+                        obj: value,
+                    });
                     if let Some(dst) = self.arena.project(clo_heap, field_path) {
                         self.constraints.add(Constraint::Copy { dst, src: addr });
                     }
@@ -478,7 +479,9 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         }
 
         // 将 dst_local (闭包变量) 指向这个 heap
-        let dst_slot = self.arena.var_ctx(self.ctx.clone(), self.func, dst_local, empty);
+        let dst_slot = self
+            .arena
+            .var_ctx(self.ctx.clone(), self.func, dst_local, empty);
         self.constraints.add(Constraint::AddressOf {
             dst: dst_slot,
             obj: clo_heap,
@@ -563,7 +566,10 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                     if let Some(upvar_loc) = upvar_loc {
                         let field_path = self.arena.extend_path(empty, ProjElem::Field(j as u32));
                         if let Some(dst) = self.arena.project(clo_heap, field_path) {
-                            self.constraints.add(Constraint::Copy { dst, src: *upvar_loc });
+                            self.constraints.add(Constraint::Copy {
+                                dst,
+                                src: *upvar_loc,
+                            });
                         }
                     }
                 }
@@ -776,41 +782,130 @@ mod place_tests {
 
         // Create a struct's heap with 3 fields (simulating MyStruct { mu, rw1, rw2 })
         let _struct_heap = arena.heap(
-            AllocSite { func: 0, bb: 0, idx: 0 },
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 0,
+            },
             empty,
         );
         let f0 = arena.extend_path(empty, ProjElem::Field(0)); // mu field
         let f1 = arena.extend_path(empty, ProjElem::Field(1)); // rw1 field
         let f2 = arena.extend_path(empty, ProjElem::Field(2)); // rw2 field
 
-        let struct_f0 = arena.heap(AllocSite { func: 0, bb: 0, idx: 0 }, f0);
-        let struct_f1 = arena.heap(AllocSite { func: 0, bb: 0, idx: 0 }, f1);
-        let struct_f2 = arena.heap(AllocSite { func: 0, bb: 0, idx: 0 }, f2);
+        let struct_f0 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 0,
+            },
+            f0,
+        );
+        let struct_f1 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 0,
+            },
+            f1,
+        );
+        let struct_f2 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 0,
+            },
+            f2,
+        );
 
         // Create 3 lock objects (one for each field)
-        let lock0 = arena.heap(AllocSite { func: 0, bb: 0, idx: 1 }, empty);
-        let lock1 = arena.heap(AllocSite { func: 0, bb: 0, idx: 2 }, empty);
-        let lock2 = arena.heap(AllocSite { func: 0, bb: 0, idx: 3 }, empty);
+        let lock0 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 1,
+            },
+            empty,
+        );
+        let lock1 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 2,
+            },
+            empty,
+        );
+        let lock2 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 3,
+            },
+            empty,
+        );
 
         // Struct fields point to locks via AddressOf
-        cs.add(Constraint::AddressOf { dst: struct_f0, obj: lock0 });
-        cs.add(Constraint::AddressOf { dst: struct_f1, obj: lock1 });
-        cs.add(Constraint::AddressOf { dst: struct_f2, obj: lock2 });
+        cs.add(Constraint::AddressOf {
+            dst: struct_f0,
+            obj: lock0,
+        });
+        cs.add(Constraint::AddressOf {
+            dst: struct_f1,
+            obj: lock1,
+        });
+        cs.add(Constraint::AddressOf {
+            dst: struct_f2,
+            obj: lock2,
+        });
 
         // Create closure environment heap with 3 fields
         let _clo_heap = arena.heap(
-            AllocSite { func: 0, bb: 0, idx: 4 },
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 4,
+            },
             empty,
         );
-        let clo_f0 = arena.heap(AllocSite { func: 0, bb: 0, idx: 4 }, f0);
-        let clo_f1 = arena.heap(AllocSite { func: 0, bb: 0, idx: 4 }, f1);
-        let clo_f2 = arena.heap(AllocSite { func: 0, bb: 0, idx: 4 }, f2);
+        let clo_f0 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 4,
+            },
+            f0,
+        );
+        let clo_f1 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 4,
+            },
+            f1,
+        );
+        let clo_f2 = arena.heap(
+            AllocSite {
+                func: 0,
+                bb: 0,
+                idx: 4,
+            },
+            f2,
+        );
 
         // Closure captures struct: clo_heap.field_i ⊇ struct_heap.field_i
         // This is the key constraint that was missing before the fix
-        cs.add(Constraint::Copy { dst: clo_f0, src: struct_f0 });
-        cs.add(Constraint::Copy { dst: clo_f1, src: struct_f1 });
-        cs.add(Constraint::Copy { dst: clo_f2, src: struct_f2 });
+        cs.add(Constraint::Copy {
+            dst: clo_f0,
+            src: struct_f0,
+        });
+        cs.add(Constraint::Copy {
+            dst: clo_f1,
+            src: struct_f1,
+        });
+        cs.add(Constraint::Copy {
+            dst: clo_f2,
+            src: struct_f2,
+        });
 
         let pts = Solver::new(0).solve(&cs, &mut arena);
 
@@ -834,9 +929,12 @@ mod place_tests {
 
         // All fields should point to DISTINCT locks (not the same)
         // This is the key property that fixes the 6-lock bug
-        let pts_to_f0: std::collections::HashSet<_> = pts.points_to(clo_f0).iter().copied().collect();
-        let pts_to_f1: std::collections::HashSet<_> = pts.points_to(clo_f1).iter().copied().collect();
-        let pts_to_f2: std::collections::HashSet<_> = pts.points_to(clo_f2).iter().copied().collect();
+        let pts_to_f0: std::collections::HashSet<_> =
+            pts.points_to(clo_f0).iter().copied().collect();
+        let pts_to_f1: std::collections::HashSet<_> =
+            pts.points_to(clo_f1).iter().copied().collect();
+        let pts_to_f2: std::collections::HashSet<_> =
+            pts.points_to(clo_f2).iter().copied().collect();
 
         assert!(
             pts_to_f0.is_disjoint(&pts_to_f1),

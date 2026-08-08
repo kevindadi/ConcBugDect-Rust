@@ -3,19 +3,10 @@ extern crate rustc_hir;
 
 use crate::analysis::reachability::{StateGraph, StateGraphConfig};
 use crate::config::ReportLevel;
-#[cfg(feature = "atomic-violation")]
-use crate::detect::atomic_violation_detector::{
-    Witness, detect_atomicity_violations, marking_from_places, print_witnesses,
-};
-#[cfg(not(feature = "atomic-violation"))]
 use crate::detect::atomicity_violation::AtomicityViolationDetector;
 use crate::detect::datarace::DataRaceDetector;
 use crate::detect::deadlock::DeadlockDetector;
-#[cfg(feature = "atomic-violation")]
-use crate::net::{core::Net, structure::TransitionType};
 use crate::options::{DetectorKind, Options, StopAfter};
-#[cfg(feature = "atomic-violation")]
-use crate::report::{AtomicOperation, ViolationPattern};
 use crate::report::{AtomicReport, DeadlockReport, RaceReport};
 use crate::translate::callgraph::CallGraph;
 use crate::translate::petri_net::PetriNet;
@@ -311,9 +302,6 @@ impl PTACallbacks {
         if self.is_research_report() {
             self.write_summary(&callgraph, &pn, &state_graph, net_construct_time, net_reduce_time, sg_build_time);
         }
-        #[cfg(feature = "atomic-violation")]
-        self.run_detectors(&pn, &state_graph);
-        #[cfg(not(feature = "atomic-violation"))]
         self.run_detectors(&state_graph);
 
         mem_watcher.stop();
@@ -418,7 +406,6 @@ impl PTACallbacks {
         }
     }
 
-    #[cfg(not(feature = "atomic-violation"))]
     fn run_detectors(&self, state_graph: &StateGraph) {
         match self.options.detector_kind {
             DetectorKind::Deadlock => {
@@ -431,50 +418,11 @@ impl PTACallbacks {
                 // Points-to mode returns early; this arm is unreachable
             }
             DetectorKind::AtomicityViolation => {
-                #[cfg(feature = "atomic-violation")]
-                {
-                    self.run_atomic_detector(state_graph);
-                }
-                #[cfg(not(feature = "atomic-violation"))]
-                {
-                    log::warn!(
-                        "Atomicity violation analysis requested but the atomic-violation feature is disabled; skipping analysis."
-                    );
-                }
+                self.run_atomic_detector(state_graph);
             }
             DetectorKind::All => {
-                #[cfg(feature = "atomic-violation")]
-                {
-                    log::info!(
-                        "Data-race and atomicity analyses are mutually exclusive; `--mode all` runs data-race analysis by default. Use `--mode atomic` with the feature enabled for atomicity analysis."
-                    );
-                }
-                join(
-                    || self.run_deadlock_detector(state_graph),
-                    || self.run_datarace_detector(state_graph),
-                );
-            }
-        }
-    }
-
-    #[cfg(feature = "atomic-violation")]
-    fn run_detectors(&self, pn: &PetriNet, state_graph: &StateGraph) {
-        match self.options.detector_kind {
-            DetectorKind::Deadlock => {
-                self.run_deadlock_detector(state_graph);
-            }
-            DetectorKind::DataRace => {
-                self.run_datarace_detector(state_graph);
-            }
-            DetectorKind::PointsTo => {
-                // Points-to mode returns early; this arm is unreachable
-            }
-            DetectorKind::AtomicityViolation => {
-                self.run_atomic_detector(pn);
-            }
-            DetectorKind::All => {
-                info!(
-                    "Data-race and atomicity analyses are mutually exclusive; `--mode all` runs data-race analysis by default. Use `--mode atomic` with the feature enabled for atomicity analysis."
+                log::info!(
+                    "Data-race and atomicity analyses are mutually exclusive; `--mode all` runs data-race analysis by default. Use `--mode atomic` for atomicity analysis."
                 );
                 join(
                     || self.run_deadlock_detector(state_graph),
@@ -500,35 +448,8 @@ impl PTACallbacks {
         });
     }
 
-    #[cfg(not(feature = "atomic-violation"))]
-    #[allow(dead_code)]
     fn run_atomic_detector(&self, state_graph: &StateGraph) {
         let report = AtomicityViolationDetector::new(state_graph).detect();
-        self.log_atomic(&report);
-        self.write_report(self.output_directory.join("atomicity_report.txt"), |path| {
-            report.save_to_file(path)
-        });
-    }
-
-    #[cfg(feature = "atomic-violation")]
-    fn run_atomic_detector(&self, pn: &PetriNet) {
-        let net = &pn.net;
-        let init = marking_from_places(net);
-        let start = Instant::now();
-        let witnesses = detect_atomicity_violations(net, &init, 200_000, 10_000);
-        let elapsed = start.elapsed();
-
-        print_witnesses(net, &witnesses);
-
-        let mut report = AtomicReport::new("Petri Net Atomic Violation Detector".to_string());
-        report.analysis_time = elapsed;
-        report.has_violation = !witnesses.is_empty();
-        report.violation_count = witnesses.len();
-        report.violations = witnesses
-            .iter()
-            .map(|w| witness_to_pattern(net, w))
-            .collect();
-
         self.log_atomic(&report);
         self.write_report(self.output_directory.join("atomicity_report.txt"), |path| {
             report.save_to_file(path)
@@ -717,64 +638,4 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(&output_root);
     }
-}
-
-#[cfg(feature = "atomic-violation")]
-fn witness_to_pattern(net: &Net, witness: &Witness) -> ViolationPattern {
-    let (alias, trace_slice) = match witness {
-        Witness::AV1 {
-            alias, trace_slice, ..
-        }
-        | Witness::AV2 {
-            alias, trace_slice, ..
-        }
-        | Witness::AV3 {
-            alias, trace_slice, ..
-        } => (*alias, trace_slice),
-    };
-
-    let mut load_op: Option<AtomicOperation> = None;
-    let mut store_ops: Vec<AtomicOperation> = Vec::new();
-
-    for transition_id in trace_slice {
-        let transition = &net.transitions[*transition_id];
-        match &transition.transition_type {
-            TransitionType::AtomicLoad(alias_id, ordering, span, tid) => {
-                if load_op.is_none() {
-                    load_op = Some(AtomicOperation {
-                        operation_type: format!("load@tid{tid}"),
-                        ordering: format!("{ordering:?}"),
-                        variable: format!("{alias_id:?}"),
-                        location: span.clone(),
-                    });
-                }
-            }
-            TransitionType::AtomicStore(alias_id, ordering, span, tid) => {
-                store_ops.push(AtomicOperation {
-                    operation_type: format!("store@tid{tid}"),
-                    ordering: format!("{ordering:?}"),
-                    variable: format!("{alias_id:?}"),
-                    location: span.clone(),
-                });
-            }
-            TransitionType::AtomicCmpXchg(alias_id, success, _failure, span, tid) => {
-                store_ops.push(AtomicOperation {
-                    operation_type: format!("cas_store@tid{tid}"),
-                    ordering: format!("{success:?}"),
-                    variable: format!("{alias_id:?}"),
-                    location: span.clone(),
-                });
-            }
-            _ => {}
-        }
-    }
-
-    let load_op = load_op.unwrap_or_else(|| AtomicOperation {
-        operation_type: "load".to_string(),
-        ordering: "N/A".to_string(),
-        variable: format!("{:?}", alias),
-        location: String::from("<unknown>"),
-    });
-
-    ViolationPattern { load_op, store_ops }
 }

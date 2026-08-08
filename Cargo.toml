@@ -56,7 +56,6 @@ inhibitor = []
 reset = []
 pnml = []
 invariants = ["num", "num-rational", "num-bigint"]
-atomic-violation = []
 
 [profile.dev]
 incremental = false
