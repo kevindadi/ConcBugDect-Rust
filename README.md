@@ -204,6 +204,7 @@ This repository is a single Cargo package (not a workspace).
 | `src/util/`           | MIR DOT export, memory watcher, and helper utilities.             |
 | `detect.sh`           | Batch helper for analyzing crates under a directory.              |
 | `bench/`              | Deadlock, data-race, and atomicity-violation benchmark crates.    |
+| `docs/`               | Design notes (e.g. CFG→Petri control-flow completeness).          |
 
 ## Known limitations
 
@@ -211,6 +212,8 @@ This repository is a single Cargo package (not a workspace).
 - Rust/C++11-style memory ordering is modeled heuristically.
 - Recursion, panic/unwind paths, and complex drop ordering are not fully modeled.
 - Deep analysis across FFI boundaries is not supported.
+
+MIR CFG embedding covers the non-cleanup BB happy path only; cleanup/unwind, `TailCall`, etc. are incomplete. Details: [docs/cfg-control-flow-completeness.md](docs/cfg-control-flow-completeness.md).
 
 ## License
 
