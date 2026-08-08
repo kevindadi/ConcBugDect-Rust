@@ -14,7 +14,7 @@ use crate::{
     concurrency::blocking::LockGuardMap,
     memory::alias_engine::AliasEngine,
     memory::pointsto::AliasId,
-    net::{Net, PlaceId, TransitionId},
+    net::{Net, PlaceId, TransitionId, structure::UnsafeOp},
     translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry},
 };
 use bb_graph::{BasicBlockGraph, SegState};
@@ -59,6 +59,9 @@ pub struct BodyToPetriNet<'translate, 'analysis, 'tcx> {
     handle_vec_source: FxHashMap<Local, Local>,
     joinhandle_vec_locals: FxHashSet<Local>,
     seg: SegState,
+    /// Unsafe accesses accumulated while scanning the current basic block;
+    /// flushed into one merged `UnsafeAccess` transition per block.
+    pending_unsafe_ops: Vec<UnsafeOp>,
 }
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
@@ -151,6 +154,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             handle_vec_source: FxHashMap::default(),
             joinhandle_vec_locals,
             seg: SegState::default(),
+            pending_unsafe_ops: Vec::new(),
         };
 
         {
@@ -321,6 +325,8 @@ impl<'translate, 'analysis, 'tcx> Visitor<'tcx> for BodyToPetriNet<'translate, '
                 }
                 self.visit_statement_body(stmt, bb_idx);
             }
+
+            self.flush_unsafe_ops(bb_idx);
 
             if bb_idx.index() == 0 {
                 self.handle_start_block(&fn_name, bb_idx, def_id);

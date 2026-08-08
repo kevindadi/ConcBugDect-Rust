@@ -56,6 +56,17 @@ pub struct Transition {
     pub transition_type: TransitionType,
 }
 
+/// One unsafe access summarized into a basic block's merged unsafe transition.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct UnsafeOp {
+    /// Unsafe alias-group id (see `ResourceRegistry::unsafe_groups`).
+    pub alias: usize,
+    pub is_write: bool,
+    pub span: String,
+    pub basic_block: usize,
+    pub ty: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum TransitionType {
     Start(usize),
@@ -70,6 +81,11 @@ pub enum TransitionType {
 
     UnsafeRead(usize, String, usize, String),
     UnsafeWrite(usize, String, usize, String),
+
+    /// One merged transition per basic block summarizing every unsafe access in
+    /// the block. Each distinct unsafe alias-group appears at most once, kept as
+    /// a write when the block writes it, otherwise as a read.
+    UnsafeAccess(Vec<UnsafeOp>),
 
     Lock(usize),
     RwLockRead(usize),

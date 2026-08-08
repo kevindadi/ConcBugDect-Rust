@@ -17,7 +17,10 @@ pub struct ResourceRegistry {
     /// Each alias may map to multiple places (after dropping first-match, one pointer may alias several atomics).
     atomic_places: FxHashMap<AliasId, Vec<PlaceId>>,
     atomic_orders: FxHashMap<AliasId, AtomicOrdering>,
-    unsafe_places: FxHashMap<AliasId, PlaceId>,
+    /// Unsafe local → alias-group id. No Petri-net places are created for
+    /// unsafe variables; the group id is carried in the merged
+    /// `TransitionType::UnsafeAccess` and used by the data-race detector.
+    unsafe_groups: FxHashMap<AliasId, u32>,
     channel_places: FxHashMap<AliasId, PlaceId>,
 }
 
@@ -28,7 +31,7 @@ impl ResourceRegistry {
             condvars: FxHashMap::default(),
             atomic_places: FxHashMap::default(),
             atomic_orders: FxHashMap::default(),
-            unsafe_places: FxHashMap::default(),
+            unsafe_groups: FxHashMap::default(),
             channel_places: FxHashMap::default(),
         }
     }
@@ -65,12 +68,12 @@ impl ResourceRegistry {
         &mut self.atomic_orders
     }
 
-    pub fn unsafe_places(&self) -> &FxHashMap<AliasId, PlaceId> {
-        &self.unsafe_places
+    pub fn unsafe_groups(&self) -> &FxHashMap<AliasId, u32> {
+        &self.unsafe_groups
     }
 
-    pub fn unsafe_places_mut(&mut self) -> &mut FxHashMap<AliasId, PlaceId> {
-        &mut self.unsafe_places
+    pub fn unsafe_groups_mut(&mut self) -> &mut FxHashMap<AliasId, u32> {
+        &mut self.unsafe_groups
     }
 
     pub fn channel_places(&self) -> &FxHashMap<AliasId, PlaceId> {

@@ -46,6 +46,16 @@ impl ReductionGraph {
                     continue;
                 }
 
+                // Do not merge a detector-visible transition (e.g. the merged
+                // `UnsafeAccess`) into a neutral one.
+                if super::preserves_transition_type(
+                    &self.transitions[in_transition_idx].transition.transition_type,
+                ) || super::preserves_transition_type(
+                    &self.transitions[out_transition_idx].transition.transition_type,
+                ) {
+                    continue;
+                }
+
                 if self.transitions[in_transition_idx].outputs.len() != 1 {
                     continue;
                 }

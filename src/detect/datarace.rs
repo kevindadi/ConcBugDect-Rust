@@ -384,6 +384,21 @@ impl<'a> DataRaceDetector<'a> {
                         transition_name: edge.weight().transition.name.clone(),
                     });
                 }
+                TransitionType::UnsafeAccess(ops) => {
+                    // One merged transition per block may touch several
+                    // variables; expand it into per-variable accesses.
+                    for op in ops {
+                        accesses.push(StateAccess {
+                            location_id: op.alias,
+                            span: op.span.clone(),
+                            basic_block: op.basic_block,
+                            op_type: if op.is_write { "write" } else { "read" },
+                            data_type: op.ty.clone(),
+                            is_write: op.is_write,
+                            transition_name: edge.weight().transition.name.clone(),
+                        });
+                    }
+                }
                 _ => {}
             }
         }
@@ -790,5 +805,119 @@ mod tests {
             transition_scope_key(name),
             "unsafe_write_read::main::{closure#1}".to_string()
         );
+    }
+
+    #[test]
+    fn detects_race_via_merged_unsafe_access() {
+        use crate::net::structure::UnsafeOp;
+
+        let mut net = Net::empty();
+        let control = net.add_place(Place::new(
+            "control",
+            1,
+            1,
+            PlaceType::BasicBlock,
+            "".into(),
+        ));
+
+        let a_write = net.add_transition(Transition::new_with_transition_type(
+            "thread_a_unsafe_bb0",
+            TransitionType::UnsafeAccess(vec![UnsafeOp {
+                alias: 0,
+                is_write: true,
+                span: "a.rs:10:5".into(),
+                basic_block: 0,
+                ty: "i32".into(),
+            }]),
+        ));
+        let b_read = net.add_transition(Transition::new_with_transition_type(
+            "thread_b_unsafe_bb0",
+            TransitionType::UnsafeAccess(vec![UnsafeOp {
+                alias: 0,
+                is_write: false,
+                span: "b.rs:20:5".into(),
+                basic_block: 0,
+                ty: "i32".into(),
+            }]),
+        ));
+
+        for transition in [a_write, b_read] {
+            net.set_input_weight(control, transition, 1);
+            net.set_output_weight(control, transition, 1);
+        }
+
+        let state_graph = StateGraph::from_net(&net);
+        let detector = DataRaceDetector::new(&state_graph);
+        let report = detector.detect();
+
+        assert!(report.has_race, "Expected merged unsafe access race");
+        assert_eq!(report.race_count, 1);
+        assert!(report.race_conditions[0]
+            .operations
+            .iter()
+            .any(|op| op.operation_type == "write" && op.location == "a.rs:10:5"));
+        assert!(report.race_conditions[0]
+            .operations
+            .iter()
+            .any(|op| op.operation_type == "read" && op.location == "b.rs:20:5"));
+    }
+
+    #[test]
+    fn merged_unsafe_access_write_wins_over_reads() {
+        use crate::net::structure::UnsafeOp;
+
+        let mut net = Net::empty();
+        let control = net.add_place(Place::new(
+            "control",
+            1,
+            1,
+            PlaceType::BasicBlock,
+            "".into(),
+        ));
+        // One block reads and writes group 0: write-优先 summarizes it as a write.
+        let merged = net.add_transition(Transition::new_with_transition_type(
+            "thread_a_unsafe_bb0",
+            TransitionType::UnsafeAccess(vec![
+                UnsafeOp {
+                    alias: 0,
+                    is_write: false,
+                    span: "a.rs:9:5".into(),
+                    basic_block: 0,
+                    ty: "i32".into(),
+                },
+                UnsafeOp {
+                    alias: 0,
+                    is_write: true,
+                    span: "a.rs:10:5".into(),
+                    basic_block: 0,
+                    ty: "i32".into(),
+                },
+            ]),
+        ));
+        let b_read = net.add_transition(Transition::new_with_transition_type(
+            "thread_b_unsafe_bb0",
+            TransitionType::UnsafeAccess(vec![UnsafeOp {
+                alias: 0,
+                is_write: false,
+                span: "b.rs:20:5".into(),
+                basic_block: 0,
+                ty: "i32".into(),
+            }]),
+        ));
+
+        for transition in [merged, b_read] {
+            net.set_input_weight(control, transition, 1);
+            net.set_output_weight(control, transition, 1);
+        }
+
+        let state_graph = StateGraph::from_net(&net);
+        let report = DataRaceDetector::new(&state_graph).detect();
+
+        assert!(report.has_race);
+        // The merged transition must surface the write, not just the read.
+        assert!(report.race_conditions[0]
+            .operations
+            .iter()
+            .any(|op| op.operation_type == "write"));
     }
 }

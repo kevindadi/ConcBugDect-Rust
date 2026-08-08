@@ -6,6 +6,7 @@ use thiserror::Error;
 use crate::net::Net;
 use crate::net::ids::{PlaceId, TransitionId};
 use crate::net::index_vec::IndexVec;
+use crate::net::structure::TransitionType;
 
 mod graph;
 mod intermediate_place;
@@ -13,6 +14,19 @@ mod loop_removal;
 mod sequence_merge;
 
 use graph::{MaterializedNet, ReductionGraph};
+
+/// Detector-visible transition types that must survive reduction as distinct
+/// nodes. The merged unsafe transition is a linear single-in/single-out node,
+/// so sequence/intermediate merging would otherwise absorb it and lose the
+/// `UnsafeAccess` type the data-race detector reads from the state graph.
+pub(crate) fn preserves_transition_type(t: &TransitionType) -> bool {
+    matches!(
+        t,
+        TransitionType::UnsafeAccess(_)
+            | TransitionType::UnsafeRead(..)
+            | TransitionType::UnsafeWrite(..)
+    )
+}
 
 pub type ReductionValidator = dyn Fn(&Net) -> Result<(), ReductionError> + Send + Sync;
 

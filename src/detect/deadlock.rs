@@ -240,6 +240,7 @@ impl<'a> DeadlockDetector<'a> {
             TransitionType::RwLockWrite(_) => "RwLock write lock",
             TransitionType::UnsafeRead(_, _, _, _) => "Unsafe read",
             TransitionType::UnsafeWrite(_, _, _, _) => "Unsafe write",
+            TransitionType::UnsafeAccess(_) => "Unsafe access",
             TransitionType::AtomicLoad(_, _, _, _) => "Atomic load",
             TransitionType::AtomicStore(_, _, _, _) => "Atomic store",
             TransitionType::AtomicCmpXchg(_, _, _, _, _) => "Atomic compare-exchange",

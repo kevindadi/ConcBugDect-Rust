@@ -48,6 +48,12 @@ impl ReductionGraph {
                         valid_chain = false;
                         break;
                     }
+                    if super::preserves_transition_type(
+                        &self.transitions[transition_idx].transition.transition_type,
+                    ) {
+                        valid_chain = false;
+                        break;
+                    }
                     if self.transitions[transition_idx].inputs.len() != 1
                         || self.transitions[transition_idx].outputs.len() != 1
                     {

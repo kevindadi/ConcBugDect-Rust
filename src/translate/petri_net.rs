@@ -253,18 +253,13 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             }
         }
 
-        for (_, group) in alias_groups {
-            let unsafe_span = group[0].1.clone();
-            let unsafe_local = group[0].0.clone();
-            let unsafe_name = format!("{:?}", unsafe_local);
-
-            let place_id = self.create_resource_place(unsafe_name, 1, 1, unsafe_span);
-            self.resources
-                .unsafe_places_mut()
-                .insert(unsafe_local, place_id);
-
+        // No Petri-net places for unsafe variables: only record the alias-group
+        // id for each local. The merged unsafe transitions carry the group id.
+        for (group_id, group) in alias_groups {
             for (local, _) in group {
-                self.resources.unsafe_places_mut().insert(local, place_id);
+                self.resources
+                    .unsafe_groups_mut()
+                    .insert(local, group_id);
             }
         }
     }
@@ -698,10 +693,6 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             let func_end_node_id = self.net.add_place(func_end);
             (func_start_node_id, func_end_node_id)
         })
-    }
-
-    pub fn unsafe_places(&self) -> &FxHashMap<AliasId, PlaceId> {
-        self.resources.unsafe_places()
     }
 
     pub fn channel_places(&self) -> &FxHashMap<AliasId, PlaceId> {
