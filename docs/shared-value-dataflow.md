@@ -2,7 +2,7 @@
 
 Where we find shared concurrency values, how aliasing merges them into resource places, and what each detector actually consumes.
 
-Companion: [cfg-control-flow-completeness.md](cfg-control-flow-completeness.md) (control edges). This note is about **resource places and the transitions that touch them**.
+Companion: [cfg-control-flow-completeness.md](cfg-control-flow-completeness.md) (control edges), [concurrency-bug-coverage.md](concurrency-bug-coverage.md) (bug-class gaps). This note is about **resource places and the transitions that touch them**.
 
 Code map:
 
