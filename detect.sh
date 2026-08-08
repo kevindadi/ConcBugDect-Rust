@@ -47,8 +47,6 @@ fi
 # crate version is stable (0.1.0) and cargo would otherwise skip reinstalling.
 pushd "$DIR" > /dev/null
 cargo install --path . --bin pn --force
-# Enable atomicity-violation detection:
-# cargo install --path . --bin pn --features atomic-violation --force
 popd > /dev/null
 
 # Use the installed pn as the rustc wrapper (falls back to the cargo bin dir
@@ -69,7 +67,7 @@ export PN_LOG="${PN_LOG:-info}"
 
 # Find all Cargo.tomls recursively under the detecting directory
 # and record them in cargo_dir.txt
-cargo_dir_file=$(realpath "$DIR/cargo_dir.txt")
+cargo_dir_file="$DIR/cargo_dir.txt"
 rm -f "$cargo_dir_file"
 touch "$cargo_dir_file"
 

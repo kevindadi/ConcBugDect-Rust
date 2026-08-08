@@ -461,7 +461,10 @@ mod tests {
     fn detect_atomicity_violation() {
         let net = build_atomic_violation_net();
         let state_graph = StateGraph::from_net(&net);
-        let detector = AtomicityViolationDetector::new(&state_graph);
+        // The test net is a single marking with self-loops; small limits keep
+        // the pathological reachable space bounded while still finding the
+        // witness (which completes at depth 3).
+        let detector = AtomicityViolationDetector::with_limits(&state_graph, 1_000, 8);
         let report = detector.detect();
 
         assert!(report.has_violation, "Expected atomicity violation");

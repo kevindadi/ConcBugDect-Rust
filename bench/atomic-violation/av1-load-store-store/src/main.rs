@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 fn main() {
@@ -7,18 +7,18 @@ fn main() {
 
     let a_shared = Arc::clone(&shared);
     let thread_a = thread::spawn(move || {
-        let current = a_shared.load(Ordering::SeqCst);
+        let current = a_shared.load(Ordering::Relaxed);
         let next = current + 2;
-        a_shared.store(next, Ordering::SeqCst);
+        a_shared.store(next, Ordering::Relaxed);
     });
 
     let b_shared = Arc::clone(&shared);
     let thread_b = thread::spawn(move || {
-        b_shared.store(1, Ordering::SeqCst);
+        b_shared.store(1, Ordering::Relaxed);
     });
 
     thread_a.join().unwrap();
     thread_b.join().unwrap();
 
-    let _ = shared.load(Ordering::SeqCst);
+    let _ = shared.load(Ordering::Relaxed);
 }

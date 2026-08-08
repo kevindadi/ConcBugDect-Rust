@@ -1,0 +1,13 @@
+====================== RustPTA Bug Report ======================
+
+Result        : NO BUG FOUND
+Mode          : atomic
+Bug count     : 0
+Severity      : none
+Confidence    : high
+Artifacts     : summary.json, stategraph.dot, petrinet.dot
+Analysis time : 0.000 s
+
+Developer explanation:
+  No modeled atomicity violation pattern was found.
+
