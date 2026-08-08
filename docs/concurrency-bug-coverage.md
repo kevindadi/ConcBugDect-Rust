@@ -31,7 +31,7 @@ Detectors today: `deadlock`, `datarace`, `atomic` (feature), `pointsto`.
 | `Once` / init reentrancy | Once state {idle,running,done} | — | **gap** / **later** | 2–3 token abstract state, not general values |
 | Raw-pointer data race | Shared loc identity; concurrent `UnsafeRead`/`Write` | Raw-ptr collect + alias merge + datarace detector | **partial** | Still raw-ptr only; no safe shared interior mutability |
 | Safe shared race (`Mutex` forgotten, `Static mut`, atomics misused as data) | Broader `SharedLoc` events (not only raw ptr) | — for safe locs; atomics separate | **gap** | Introduce `SharedLoc` R/W events from alias, keep values out |
-| Atomicity violation (load/store interval broken) | Atomic events + coarse thread segments / orders | `AtomicLoad`/`Store`/`CmpXchg`; feature `atomic-violation` | **partial** | RMW coverage; don’t pretend full C++11 |
+| Atomicity violation (load/store interval broken) | Atomic events + per-thread ordering segments | `AtomicLoad`/`Store`/`CmpXchg` + AV1/2/3 witness search on the shared state graph | **partial** | RMW coverage; don’t pretend full C++11 |
 | Memory-ordering / HB bugs | Release/acquire edges or vector clocks on traces | Ordering stored on transitions; not a real HB checker | **gap** | Detector-side HB on event traces; don’t color the whole net |
 | Join / lifetime bugs (use after thread end, missing join) | `Spawn`/`Join` sync with thread end places | `Spawn`/`Join` wired | **partial** | Scope threads; join-handle alias precision |
 | Async / tokio races & deadlocks | Task spawn, `.await` points, async Mutex | Explicitly skipped in lock typing | **later** | Separate async templates when needed; don’t mix into sync MIR net blindly |
@@ -82,7 +82,7 @@ Branch value over-approx → FP is accepted. Missing *identity* → FN is not.
 | P3 | Same atomic → no `find_atomic_matches` | `alias_atomic` miss ⇒ atomic call falls through without resource arcs | PTA/`alias_atomic` quality; last-resort: still tag transition + fresh place + warn |
 | P4 | Join ↔ spawn callee mismatch | `get_matching_spawn_callees` uses alias on handles | Handle/pts precision for `JoinHandle` |
 
-Secondary (not “recognition wrong”, but can still drop bugs): translation scope (body with locks never in the net), `state_limit` truncation, `atomic-violation` feature currently skipping lock/condvar handlers, empty `dependency_deadlocks` stub.
+Secondary (not “recognition wrong”, but can still drop bugs): translation scope (body with locks never in the net), `state_limit` truncation, locks/atomics/condvars that fall outside the configured API regex, empty `dependency_deadlocks` stub.
 
 ### What we are *not* prioritizing as FN fixes
 

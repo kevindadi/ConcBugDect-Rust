@@ -65,7 +65,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             bb_idx.index()
         );
         let intermediate_id = crate::bb_place!(self.net, intermediate_name, span_owned.clone());
-        self.net.add_input_arc(intermediate_id, bb_end, 1);
+        self.net.add_output_arc(intermediate_id, bb_end, 1);
 
         // Ordering segments are computed once per MIR operation and shared by
         // every alias alternative, so an acquire/release/seqcst op advances the
@@ -86,7 +86,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 Transition::new_with_transition_type(transition_name, transition_type);
             let transition_id = self.net.add_transition(transition);
 
-            self.net.add_output_arc(intermediate_id, transition_id, 1);
+            self.net.add_input_arc(intermediate_id, transition_id, 1);
             self.net.add_input_arc(resource_place, transition_id, 1);
             self.net.add_output_arc(resource_place, transition_id, 1);
 
@@ -100,7 +100,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
             if let Some(t) = target {
                 self.net
-                    .add_input_arc(self.bb_graph.start(*t), transition_id, 1);
+                    .add_output_arc(self.bb_graph.start(*t), transition_id, 1);
             }
         }
         true

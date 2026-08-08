@@ -1,5 +1,6 @@
 **/target
 **/Cargo.lock
+**/tmp
 
 .vscode
 .DS_Store

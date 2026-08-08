@@ -8,7 +8,7 @@ The crate name is `conc_bug_detector`. The installed binaries remain `pn` and `c
 
 - Deadlock detection (`--mode deadlock`, the default).
 - Data-race detection (`--mode datarace`).
-- Atomicity-violation detection (`--mode atomic`, requires the `atomic-violation` feature).
+- Atomicity-violation detection (`--mode atomic`).
 - Standalone points-to reporting (`--mode pointsto`) and optional points-to export (`--viz-pointsto`).
 - DOT visualization for call graphs, MIR, Petri nets, Petri-net reduction stages, and state graphs.
 - Optional Petri-net reduction before state-space construction.
@@ -58,10 +58,11 @@ cargo pn -m deadlock -p your_crate --viz-callgraph --viz-petrinet --viz-stategra
 
 ### Run atomicity analysis
 
-Atomicity detection is behind the `atomic-violation` feature.
+All detectors share the same Petri net and state graph; `--mode atomic` runs the
+AV1/AV2/AV3 witness search over that state graph.
 
 ```bash
-cargo run --features atomic-violation --bin pn -- \
+cargo run --bin pn -- \
   -p your_crate \
   -m atomic \
   --viz-petrinet \
@@ -96,10 +97,9 @@ PN_FLAGS="-m datarace -p unsafe_write_read --pn-analysis-dir=tmp/unsafe_write_re
   cargo build --manifest-path bench/data-race/unsafe-write-read/Cargo.toml
 ```
 
-For atomic-violation benchmarks, reinstall `pn` with the feature enabled:
+For atomic-violation benchmarks:
 
 ```bash
-cargo install --path . --bin pn --features atomic-violation --force
 RUSTC_WRAPPER="$(command -v pn)" \
 PN_FLAGS="-m atomic -p av1_load_store_store --pn-analysis-dir=tmp/av1" \
   cargo build --manifest-path bench/atomic-violation/av1-load-store-store/Cargo.toml
@@ -123,7 +123,7 @@ Default flags when none are given:
 
 | Flag                                                        | Meaning                                                                                             |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `-m, --mode <deadlock\|datarace\|atomic\|all\|pointsto>`    | Select the analysis mode. `atomic` is accepted only when the `atomic-violation` feature is enabled. |
+| `-m, --mode <deadlock\|datarace\|atomic\|all\|pointsto>`    | Select the analysis mode. |
 | `-p, --pn-crate <name>`                                     | Set the target crate/output name for Cargo-based analysis.                                          |
 | `--pn-analysis-dir <path>`                                  | Set the output root for analysis artifacts.                                                         |
 | `--config <file>`                                           | Load configuration from a TOML file. Defaults to `pn.toml` when present.                            |

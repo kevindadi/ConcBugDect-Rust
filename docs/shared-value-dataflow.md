@@ -73,8 +73,6 @@ One resource place per condvar alias group (tokens=1).
 | notify | `Notify`: produce onto condvar place |
 | wait | subnet: unlock mutex on enter; ret transition consumes condvar token + re-locks |
 
-Disabled under `atomic-violation` feature (handler returns early).
-
 **Accuracy**
 
 - Std `wait`/`notify` with recognisable signatures: ok.
@@ -90,12 +88,12 @@ Locals whose ADT path contains `::sync::atomic::` (not `Ordering`). Ops from cal
 `construct_atomic_resources`: merge with `alias_atomic`; place tokens=1, cap=1. Map: `AliasId → Vec<PlaceId>`.
 
 **Wire**  
-`handle_atomic_call` → `find_atomic_matches` → load/store transitions that read/write the resource place (and segment places when `atomic-violation` is on).
+`handle_atomic_call` → `find_atomic_matches` → load/store transitions that read/write the resource place (and per-thread ordering segment places, always enabled).
 
 **Accuracy**
 
 - Covers common `Atomic*` locals + load/store.
-- RMW / CAS naming exists; wiring depth differs by feature path.
+- RMW / CAS naming exists; wiring depth for RMW ops is limited.
 - Ordering is heuristic (first recorded op; MIR enum encoding).
 - Pointer atomics / `AtomicPtr` stores have extra helpers; not full C++11 semantics.
 - Alias merge uses `alias_atomic` (can differ from lock aliasing).

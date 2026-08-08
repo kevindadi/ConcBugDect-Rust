@@ -4,7 +4,7 @@ How each bug mode reads the **state graph** (or explores the net) and what net p
 
 Shared assumption: resource identity (same lock / loc / atomic) was already fixed when building the net. Detectors only look at markings and typed transitions.
 
-Code: `src/detect/deadlock.rs`, `datarace.rs`, `atomicity_violation.rs`, `atomic_violation_detector.rs`.
+Code: `src/detect/deadlock.rs`, `datarace.rs`, `atomicity_violation.rs`.
 
 ## Overview
 
@@ -177,10 +177,9 @@ Alias under-merge → FN. Over-merge → FP.
 
 | Build | Algorithm |
 | ----- | --------- |
-| default | SG heuristic (`AtomicityViolationDetector`) |
-| `--features atomic-violation` | Net fire + AV1/2/3 (`detect_atomicity_violations`) |
+| all | AV1/2/3 witness search over the shared state graph (`AtomicityViolationDetector`) |
 
-### Feature path — AV patterns
+### AV patterns
 
 Same atomic `L`, threads `i` ≠ `j`. A remote store breaks an interval of `i`:
 
@@ -236,14 +235,13 @@ flowchart TB
 | AV2 | Storeᵢ … Storeⱼ … Loadᵢ | Remote store between `i`’s store and later load |
 | AV3 | Loadᵢ … Storeⱼ … Loadᵢ | Remote store between two loads of `i` |
 
-### Default path — load with ≥2 related stores in history
-
-```mermaid
-flowchart TB
-  load["AtomicLoad at state s"] --> walk["walk SG predecessors"]
-  walk --> stores["AtomicStore same var<br/>ordering allowed"]
-  stores -->|"count ≥ 2"| hit["ATOMICITY VIOLATION"]
-```
+The search is a depth-first traversal over the shared state-graph edges. It
+tracks, per rule and per `(alias, thread)` key, the last start transition and any
+intruding-store transitions observed since it, and emits a witness when a trace
+`start … mid … end` completes a pattern. Ordering is enforced structurally by the
+per-thread segment places (acquire/release advance a thread’s segment; seqcst
+additionally synchronizes on a global place), so the reachable interleavings in
+the state graph already respect the modeled ordering constraints.
 
 ---
 
