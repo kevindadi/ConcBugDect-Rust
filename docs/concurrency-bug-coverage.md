@@ -56,11 +56,46 @@ Out of scope (do not grow the net for these):
 
 ## Priority order
 
-1. **Close FN on existing classes** — lock/condvar/channel recognition + alias identity (highest ROI).  
+1. **Close FN on existing classes** — lock/condvar/channel recognition + alias identity (highest ROI). See below.  
 2. **Add missing sync templates** — barrier, semaphore, better channel close/select.  
 3. **Generalize shared events** — `SharedLoc` R/W beyond raw pointers; datarace consumes that.  
 4. **HB as detector pass** — use atomic order tags on traces; keep marking as P/T tokens.  
 5. **Async** — only with an explicit second template set.
+
+## Priority 1 — FN sources and fixes
+
+Under our intended patterns, **API recognition is not the main FN source**:
+
+- Lock: identify acquire when the call yields a `MutexGuard` / `RwLock*Guard` (std: after `lock` + `unwrap`). That path is intentional and reliable.
+- Condvar `wait`: fixed `(condvar, guard)` shape; not treated as a recognition gap.
+
+Most FNs for *existing* classes are **alias / points-to under-merge**: two guards, two raw ptrs, or two atomic locals that are the same resource in the program get **different Petri resource places**, so Lock/Unsafe/Atomic transitions never contend.
+
+Branch value over-approx → FP is accepted. Missing *identity* → FN is not.
+
+### Primary (pointer analysis / identity)
+
+| # | FN | Mechanism | Fix direction |
+| - | -- | --------- | ------------- |
+| P1 | Same mutex → two lock places | Union-find merges guards when `alias(lock_object_i, lock_object_j)` (or guard fallback) says may-alias. Under-merge ⇒ no shared token ⇒ no deadlock | Improve lock-object `AliasId` (field-sensitive receiver); prefer PTA (`pta_engine`) for merge; measure merge rate on `intra`/`inter`/`conflict` |
+| P2 | Same raw ptr / shared loc → two unsafe places | `construct_unsafe_blocks` groups by `alias`; under-merge ⇒ no conflicting `UnsafeRead`/`Write` | Same engine; conservative Unknown for race wiring; bench `unsafe-write-*` |
+| P3 | Same atomic → no `find_atomic_matches` | `alias_atomic` miss ⇒ atomic call falls through without resource arcs | PTA/`alias_atomic` quality; last-resort: still tag transition + fresh place + warn |
+| P4 | Join ↔ spawn callee mismatch | `get_matching_spawn_callees` uses alias on handles | Handle/pts precision for `JoinHandle` |
+
+Secondary (not “recognition wrong”, but can still drop bugs): translation scope (body with locks never in the net), `state_limit` truncation, `atomic-violation` feature currently skipping lock/condvar handlers, empty `dependency_deadlocks` stub.
+
+### What we are *not* prioritizing as FN fixes
+
+- Reworking lock acquire to sit on `lock()` instead of guard-producing `unwrap` — current design is fine.
+- Generalizing condvar argument shapes — fixed API is in scope.
+- Growing the net with values to kill branch FPs — out of scope.
+
+### Implementation order (recommended)
+
+1. **Measure identity** — for each bench, log #lock places vs #expected mutexes; #unsafe places vs #shared locs (catch under-merge).  
+2. **Tighten alias for resource merge** — lock receivers + unsafe/atomic with PTA; keep wiring sites as they are.  
+3. **Policy** — resource merge / race: conservative on `Unknown`; don’t “fix” APIs that already match our patterns.  
+4. Only then: scope/truncation/feature-interaction secondaries.
 
 ## Checklist for a new bug class
 
