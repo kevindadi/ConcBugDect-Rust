@@ -222,6 +222,7 @@ pub fn build_body<'a, 'tcx>(
     arena: &mut LocArena,
     constraints: &mut ConstraintSet,
     closure_envs: &mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[LocId; 2]>>,
+    closure_env_paths: &mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[FieldPath; 16]>>,
 ) -> Vec<PendingCall<'tcx>> {
     let typing_env = TypingEnv::post_analysis(tcx, caller.def_id());
     let mut builder = ConstraintBuilder {
@@ -234,6 +235,7 @@ pub fn build_body<'a, 'tcx>(
         arena,
         constraints,
         closure_envs,
+        closure_env_paths,
         pending: Vec::new(),
         call_counter: 0,
         next_temp: 1_000_000,
@@ -278,6 +280,10 @@ struct ConstraintBuilder<'a, 'tcx> {
     /// Closure DefId → def-site environment heaps, threaded up to the driver so
     /// closure bodies can be bound to the environment that captured their upvars.
     closure_envs: &'a mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[LocId; 2]>>,
+    /// Closure DefId → environment field paths that were actually captured
+    /// (base upvar slot and nested leaf paths of aggregate upvars). Threaded up
+    /// to the driver so it can bind the closure body's env slots to the heap.
+    closure_env_paths: &'a mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[FieldPath; 16]>>,
     /// Call sites awaiting interprocedural resolution by the driver.
     pending: Vec<PendingCall<'tcx>>,
     /// Monotonic counter giving each call site a distinct fresh heap object.
@@ -294,8 +300,17 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
     /// Convert a rustc MIR projection into the rustc-free [`ProjKind`] slice the
     /// place walk consumes. Index / ConstantIndex / Subslice / Downcast /
     /// OpaqueCast etc. collapse into a single `Index` (sound over-approximation).
-    fn proj_kinds(proj: &[PlaceElem<'tcx>]) -> SmallVec<[ProjKind; 4]> {
-        let mut out: SmallVec<[ProjKind; 4]> = SmallVec::new();
+    /// Extend an interned field path by the elements of another leaf path.
+    fn extend_path_with(&mut self, base: FieldPath, suffix: FieldPath) -> FieldPath {
+        let elems: Vec<ProjElem> = self.arena.path(suffix).to_vec();
+        let mut p = base;
+        for e in elems {
+            p = self.arena.extend_path(p, e);
+        }
+        p
+    }
+
+    fn proj_kinds(proj: &[PlaceElem<'tcx>]) -> SmallVec<[ProjKind; 4]> {        let mut out: SmallVec<[ProjKind; 4]> = SmallVec::new();
         for e in proj {
             out.push(match e {
                 ProjectionElem::Field(f, _) => ProjKind::Field(f.as_u32()),
@@ -391,6 +406,67 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         });
     }
 
+    /// For aggregate (struct) local-to-local moves/copies, additionally
+    /// propagate each leaf field slot (`y.p ⊇ x.p`). A plain base `Copy` only
+    /// carries the base slot's points-to set, which is empty for a value
+    /// struct, silently dropping every field (e.g. `SharedPtr(*mut i32)` copied
+    /// by value into a thread closure). Without this, raw-pointer / shared
+    /// value flows through `Copy` structs are lost and cross-thread accesses no
+    /// longer alias.
+    fn expand_aggregate_copy(&mut self, lhs_proj: &[ProjKind], lhs_local: u32, op: &Operand<'tcx>) {
+        if !lhs_proj.is_empty() {
+            return;
+        }
+        let Some(src) = op.place() else {
+            return;
+        };
+        let src_proj = Self::proj_kinds(src.projection);
+        let src_local = src.local.as_u32();
+        if src_local == lhs_local && src_proj.is_empty() {
+            return;
+        }
+        let ty = self.body.local_decls[rustc_middle::mir::Local::from_usize(lhs_local as usize)].ty;
+        let ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
+            self.tcx,
+            self.typing_env,
+            rustc_middle::ty::EarlyBinder::bind(ty),
+        );
+        if !matches!(ty.kind(), rustc_middle::ty::TyKind::Adt(..)) {
+            return;
+        }
+        // Source slot prefix for a projected source (`_3 = copy (_1.0)`): the
+        // value lives at `src_local` under `src_proj`, so leaf slot `p` is
+        // `src_local.(src_proj · p)`. Skip sources with a Deref (not a slot).
+        let src_prefix: Vec<ProjElem> = src_proj
+            .iter()
+            .filter_map(|e| match e {
+                ProjKind::Field(f) => Some(ProjElem::Field(*f)),
+                ProjKind::Index => Some(ProjElem::Index),
+                ProjKind::Deref => None,
+            })
+            .collect();
+        let has_deref = src_proj.iter().any(|e| matches!(e, ProjKind::Deref));
+
+        let paths = leaf_field_paths(self.tcx, self.typing_env, ty, &mut self.arena);
+        for p in paths {
+            if self.arena.path(p).is_empty() {
+                continue;
+            }
+            let dst = self.arena.var_ctx(self.ctx.clone(), self.func, lhs_local, p);
+            let src_slot_path = if has_deref {
+                p
+            } else {
+                let mut combined = p;
+                for e in src_prefix.iter().rev() {
+                    combined = self.arena.extend_path(combined, *e);
+                }
+                combined
+            };
+            let src = self.arena.var_ctx(self.ctx.clone(), self.func, src_local, src_slot_path);
+            self.constraints.add(Constraint::Copy { dst, src });
+        }
+    }
+
     fn process_assignment(&mut self, place: &Place<'tcx>, rvalue: &Rvalue<'tcx>) {
         let lhs_proj = Self::proj_kinds(place.projection);
         let lhs_local = place.local.as_u32();
@@ -419,8 +495,13 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 };
                 self.store_value(&lhs_proj, lhs_local, src_addr);
             }
-            Rvalue::Use(op, _)
-            | Rvalue::Cast(_, op, _)
+            Rvalue::Use(op, _) => {
+                if let Some(v) = self.operand_value(op) {
+                    self.store_value(&lhs_proj, lhs_local, v);
+                }
+                self.expand_aggregate_copy(&lhs_proj, lhs_local, op);
+            }
+            Rvalue::Cast(_, op, _)
             | Rvalue::Repeat(op, _)
             | Rvalue::UnaryOp(_, op) => {
                 if let Some(v) = self.operand_value(op) {
@@ -499,8 +580,47 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 continue;
             };
             let field_path = self.arena.extend_path(empty, ProjElem::Field(i.as_u32()));
+            self.closure_env_paths
+                .entry(_def_id)
+                .or_default()
+                .push(field_path);
             if let Some(dst) = self.arena.project(clo_heap, field_path) {
                 self.constraints.add(Constraint::Copy { dst, src: value });
+            }
+            // Aggregate upvars captured by value: also capture each leaf field
+            // slot (`clo_heap.field_i·p ⊇ V_upvar.p`). A base copy alone carries
+            // the struct's (empty) points-to set, dropping fields such as a raw
+            // pointer inside a `SharedPtr` that the closure dereferences.
+            if let Some(place) = op.place() {
+                if place.projection.is_empty() {
+                    let upvar_local = place.local.as_u32();
+                    let ty = self.body.local_decls[place.local].ty;
+                    let ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
+                        self.tcx,
+                        self.typing_env,
+                        rustc_middle::ty::EarlyBinder::bind(ty),
+                    );
+                    if matches!(ty.kind(), rustc_middle::ty::TyKind::Adt(..)) {
+                        let paths =
+                            leaf_field_paths(self.tcx, self.typing_env, ty, &mut self.arena);
+                        for p in paths {
+                            if self.arena.path(p).is_empty() {
+                                continue;
+                            }
+                            let combined = self.extend_path_with(field_path, p);
+                            self.closure_env_paths
+                                .entry(_def_id)
+                                .or_default()
+                                .push(combined);
+                            if let Some(dst) = self.arena.project(clo_heap, combined) {
+                                let src = self
+                                    .arena
+                                    .var_ctx(self.ctx.clone(), self.func, upvar_local, p);
+                                self.constraints.add(Constraint::Copy { dst, src });
+                            }
+                        }
+                    }
+                }
             }
             // 如果 upvar 是引用类型,还需要 AddressOf
             let upvar_ty = upvar_tys.get(i.as_usize());

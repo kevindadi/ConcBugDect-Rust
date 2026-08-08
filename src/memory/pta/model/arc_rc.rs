@@ -119,9 +119,12 @@ mod tests {
         };
         let mut cs = ConstraintSet::default();
         model.emit(&nodes, &mut cs);
-        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.len(), 2);
         assert!(cs
             .iter()
             .any(|c| *c == Constraint::Load { dst: 0, src: 1 }));
+        assert!(cs
+            .iter()
+            .any(|c| *c == Constraint::Copy { dst: 0, src: 1 }));
     }
 }

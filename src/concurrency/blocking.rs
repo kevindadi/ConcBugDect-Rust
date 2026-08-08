@@ -410,10 +410,15 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                             );
                         } else if ownership::is_wrapper_extract(def_id, self.tcx)
                             || ownership::is_arc_rc_deref(def_id, substs, self.tcx)
+                            || self
+                                .lockguards
+                                .contains_key(&LockGuardId::new(self.instance_id, destination.local))
                         {
-                            // `Result::unwrap()` and `Arc/Rc::deref()` do not change
-                            // which lock object a guard protects; they only re-express
-                            // the receiver through a temporary local.
+                            // `Result::unwrap()`, `Arc/Rc::deref()`, and any other
+                            // guard-producing call (e.g. custom `HandyRwLock::rl/wl`
+                            // wrappers) do not change which lock object a guard
+                            // protects; they only re-express the receiver through a
+                            // temporary local, so forward arg0.
                             def_source.insert(
                                 destination.local,
                                 DefSource::Forward {

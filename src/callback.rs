@@ -265,7 +265,7 @@ impl PTACallbacks {
             let sg = StateGraph::with_config(&pn.net, sg_config);
             let sg_build_time = sg_build_start.elapsed();
             log::info!("State graph built in {:?}", sg_build_time);
-            self.handle_visualizations(&callgraph, &pn, &sg, &instances);
+            self.handle_visualizations(&callgraph, &pn, &sg);
             if self.is_research_report() {
                 self.write_summary(&callgraph, &pn, &sg, net_construct_time, net_reduce_time, sg_build_time);
             }
@@ -291,14 +291,14 @@ impl PTACallbacks {
         // Stop after state graph construction.
         if self.options.stop_after == StopAfter::AfterStateGraph {
             log::info!("Stopping analysis after state graph construction");
-            self.handle_visualizations(&callgraph, &pn, &state_graph, &instances);
+            self.handle_visualizations(&callgraph, &pn, &state_graph);
             if self.is_research_report() {
                 self.write_summary(&callgraph, &pn, &state_graph, net_construct_time, net_reduce_time, sg_build_time);
             }
             return;
         }
 
-        self.handle_visualizations(&callgraph, &pn, &state_graph, &instances);
+        self.handle_visualizations(&callgraph, &pn, &state_graph);
         if self.is_research_report() {
             self.write_summary(&callgraph, &pn, &state_graph, net_construct_time, net_reduce_time, sg_build_time);
         }
@@ -312,7 +312,6 @@ impl PTACallbacks {
         callgraph: &CallGraph<'tcx>,
         pn: &PetriNet<'analysis, 'tcx>,
         state_graph: &StateGraph,
-        instances: &[Instance<'tcx>],
     ) {
         let dump = &self.options.dump_options;
 
@@ -343,30 +342,12 @@ impl PTACallbacks {
             todo!()
         }
         if dump.dump_points_to || matches!(self.options.detector_kind, DetectorKind::PointsTo) {
-            pn.alias.borrow_mut().ensure_pts_for_instances(instances);
             let report = pn.alias.borrow().format_points_to_report();
             let path = self.output_directory.join("points_to_report.txt");
             if let Err(err) = std::fs::write(&path, report) {
                 error!("failed to write points-to report to {:?}: {err}", path);
             } else {
                 info!("points-to report exported to {:?}", path);
-            }
-
-            // Differential side-channel: run the new field-sensitive engine over
-            // the same call graph and emit a parallel report. Read-only; does not
-            // affect Petri-net construction or any detector.
-            let mut pta = crate::memory::pta::PtaAliasAnalysis::with_k(
-                pn.tcx(),
-                callgraph,
-                self.options.config.pta_k,
-            );
-            pta.build();
-            let pta_report = pta.format_report();
-            let pta_path = self.output_directory.join("points_to_report_pta.txt");
-            if let Err(err) = std::fs::write(&pta_path, pta_report) {
-                error!("failed to write PTA points-to report to {:?}: {err}", pta_path);
-            } else {
-                info!("PTA points-to report exported to {:?}", pta_path);
             }
         }
     }

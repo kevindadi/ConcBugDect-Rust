@@ -26,6 +26,11 @@ use super::model::{CallNodes, ModelRegistry};
 use super::result::PointsToResult;
 use super::solver::Solver;
 
+/// Upper bound on closure environment fields eagerly bound per closure. Only
+/// fields that were actually captured have heap entries; unused slots get empty
+/// copies (no-ops), so a generous cap is harmless.
+const MAX_UPVAR_FIELDS: u32 = 32;
+
 pub struct PointerAnalysis<'tcx> {
     tcx: TyCtxt<'tcx>,
     arena: LocArena,
@@ -37,9 +42,14 @@ pub struct PointerAnalysis<'tcx> {
     built: FxHashSet<(Instance<'tcx>, Context)>,
     /// Closure DefId → def-site environment heaps (from each construction site).
     closure_envs: FxHashMap<DefId, SmallVec<[LocId; 2]>>,
+    /// Closure DefId → captured environment field paths (base slots + nested
+    /// leaf paths of aggregate upvars).
+    closure_env_paths: FxHashMap<DefId, SmallVec<[FieldPath; 16]>>,
     /// Closure instances built under a context, awaiting env binding after the
     /// main build loop (the capturing function may be built later in the queue).
     built_closures: Vec<(Instance<'tcx>, Context, u32)>,
+    /// Monotonic counter for temporary loc ids used by interprocedural binding.
+    temp_counter: u32,
 }
 
 impl<'tcx> PointerAnalysis<'tcx> {
@@ -59,7 +69,9 @@ impl<'tcx> PointerAnalysis<'tcx> {
             policy: KCallSite::new(k),
             built: FxHashSet::default(),
             closure_envs: FxHashMap::default(),
+            closure_env_paths: FxHashMap::default(),
             built_closures: Vec::new(),
+            temp_counter: 1_000_000,
         }
     }
 
@@ -101,6 +113,7 @@ impl<'tcx> PointerAnalysis<'tcx> {
                 &mut self.arena,
                 &mut self.constraints,
                 &mut self.closure_envs,
+                &mut self.closure_env_paths,
             );
             if Self::is_closure(self.tcx, inst) {
                 self.built_closures.push((inst, ctx.clone(), func));
@@ -118,12 +131,41 @@ impl<'tcx> PointerAnalysis<'tcx> {
         // second `build_reachable` is harmless.
         for (inst, ctx, func) in std::mem::take(&mut self.built_closures) {
             let heaps = self.closure_envs.get(&inst.def_id()).cloned();
+            let paths = self.closure_env_paths.get(&inst.def_id()).cloned();
             if let Some(heaps) = heaps {
                 let empty = self.arena.empty_path();
-                let env_node = self.arena.var_ctx(ctx, func, 1, empty);
+                let env_node = self.arena.var_ctx(ctx.clone(), func, 1, empty);
                 for heap in heaps {
                     self.constraints
                         .add(Constraint::AddressOf { dst: env_node, obj: heap });
+                    // Bind the base upvar slots (`_1.field_i`); the MAX probing
+                    // covers every plausible field index, not just captured ones.
+                    for i in 0..MAX_UPVAR_FIELDS {
+                        let field_path =
+                            self.arena.extend_path(empty, ProjElem::Field(i as u32));
+                        let env_field = self.arena.var_ctx(ctx.clone(), func, 1, field_path);
+                        if let Some(heap_field) = self.arena.project(heap, field_path) {
+                            self.constraints
+                                .add(Constraint::Copy { dst: env_field, src: heap_field });
+                        }
+                    }
+                    // Nested leaf paths of aggregate upvars (e.g. `SharedPtr`
+                    // copied by value) so `_1.0.field_0` keeps its raw-pointer
+                    // value.
+                    if let Some(paths) = &paths {
+                        for &p in paths {
+                            if self.arena.path(p).is_empty() {
+                                continue;
+                            }
+                            let env_field = self.arena.var_ctx(ctx.clone(), func, 1, p);
+                            if let Some(heap_field) = self.arena.project(heap, p) {
+                                self.constraints.add(Constraint::Copy {
+                                    dst: env_field,
+                                    src: heap_field,
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -216,8 +258,13 @@ impl<'tcx> PointerAnalysis<'tcx> {
                 .add(Constraint::Copy { dst: param, src: arg });
 
             // Field expansion: for each leaf field path p of the param's type,
-            // param·p ⊇ arg·p. Only adds edges between *projected* slots; sound
-            // (the base Copy already covers the field-insensitive case).
+            // `param·p ⊇ value-at(arg·p)`. We must project the arg's *pointees*
+            // by p and then read the value there (Offset then Load); a plain
+            // `Copy` from `arg·p` only reads the arg's own (usually empty) field
+            // slot and silently drops by-value aggregate params (e.g. a
+            // `SharedPtr(*mut i32)` passed by value into `as_ptr`). For a
+            // reference-to-local arg the two readings coincide, so this stays
+            // sound for the shared-struct-field patterns too.
             let param_ty = body.local_decls[rustc_middle::mir::Local::from_usize(i)].ty;
             let param_ty = callee.instantiate_mir_and_normalize_erasing_regions(
                 self.tcx,
@@ -234,10 +281,17 @@ impl<'tcx> PointerAnalysis<'tcx> {
                 if self.arena.path(p).is_empty() {
                     continue;
                 }
-                let pj = self.arena.project(param, p);
-                let aj = self.arena.project(arg, p);
-                if let (Some(pj), Some(aj)) = (pj, aj) {
-                    self.constraints.add(Constraint::Copy { dst: pj, src: aj });
+                if let Some(pj) = self.arena.project(param, p) {
+                    let temp = self.fresh_temp_loc();
+                    self.constraints.add(Constraint::Offset {
+                        dst: temp,
+                        src: arg,
+                        suffix: p,
+                    });
+                    self.constraints.add(Constraint::Load {
+                        dst: pj,
+                        src: temp,
+                    });
                 }
             }
         }
@@ -446,6 +500,15 @@ impl<'tcx> PointerAnalysis<'tcx> {
 
     pub fn arena(&self) -> &LocArena {
         &self.arena
+    }
+
+    /// A fresh temporary var node (never a real MIR local) for holding an
+    /// intermediate Offset/Load value during interprocedural binding.
+    fn fresh_temp_loc(&mut self) -> LocId {
+        let base = self.temp_counter;
+        self.temp_counter += 1;
+        let empty = self.arena.empty_path();
+        self.arena.var_ctx(Context::empty(), 0, base, empty)
     }
 
     pub fn tcx(&self) -> TyCtxt<'tcx> {

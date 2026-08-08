@@ -573,10 +573,6 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                     .alias
                     .borrow_mut()
                     .alias(ri, rj);
-                log::debug!(
-                    "[LOCKDBG] recv {:?} vs {:?} -> {:?}",
-                    ri, rj, result
-                );
                 if result.may_alias(policy) {
                     log::debug!(
                         "Locks {:?} and {:?} may alias",

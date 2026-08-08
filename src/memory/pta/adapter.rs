@@ -174,17 +174,13 @@ impl<'a, 'tcx> PtaAliasAnalysis<'a, 'tcx> {
             return ApproximateAliasKind::Possibly;
         }
 
-        // Different instance but same local (e.g., guard aliases pointing to the
-        // same struct field across functions like mu_rw1/rw1_rw2/rw2_mu). When
-        // both have field info, different fields cannot alias.
-        if aid1.local == aid2.local {
-            match (aid1.field, aid2.field) {
-                (Some(f1), Some(f2)) if f1 != f2 => {
-                    return ApproximateAliasKind::Unlikely;
-                }
-                _ => {}
-            }
-        }
+        // Different instance but same local. We cannot conclude that different
+        // `field`s disallow aliasing here: the two locals may belong to distinct
+        // closure environments / receivers whose field indexes are unrelated
+        // (e.g. `(env_a).0` vs `(env_b).1`), so a syntactic field mismatch is
+        // unsound. Fall through to the points-to query, which projects the field
+        // and compares the actual pointees (this is what keeps `self.mu` apart
+        // from `self.rw1` while still merging the same field across functions).
 
         // Different instance or local - use points-to analysis
         let ia = self.instance_of(aid1);
@@ -202,19 +198,6 @@ impl<'a, 'tcx> PtaAliasAnalysis<'a, 'tcx> {
                 ) {
                     return ApproximateAliasKind::Probably;
                 }
-                log::debug!(
-                    "[PTADBG] {} inst{}_l{} f{:?} vs {} inst{}_l{} f{:?}: sa={:?} sb={:?}",
-                    crate::util::format_name(ia.def_id()),
-                    aid1.instance_id.index(),
-                    aid1.local.as_u32(),
-                    aid1.field,
-                    crate::util::format_name(ib.def_id()),
-                    aid2.instance_id.index(),
-                    aid2.local.as_u32(),
-                    aid2.field,
-                    self.pta.collapsed_receiver_points_to(result, ia, aid1.local.as_u32(), aid1.field),
-                    self.pta.collapsed_receiver_points_to(result, ib, aid2.local.as_u32(), aid2.field),
-                );
                 // Type-parameter heuristic: parameters of same type/index may alias
                 if self.may_alias_via_type_param(ia, aid1.local, ib, aid2.local) {
                     return ApproximateAliasKind::Possibly;
