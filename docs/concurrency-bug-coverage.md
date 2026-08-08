@@ -4,7 +4,7 @@ Bug class → what the net needs → what exists today.
 
 Not a Petri encoding guide. Goal: extend **sync templates + shared events**, not full Rust semantics. Value-insensitive branches → FP is accepted; missing sync edges → FN is not.
 
-Related: [shared-value-dataflow.md](shared-value-dataflow.md), [cfg-control-flow-completeness.md](cfg-control-flow-completeness.md).
+Related: [shared-value-dataflow.md](shared-value-dataflow.md), [cfg-control-flow-completeness.md](cfg-control-flow-completeness.md), [detection-algorithms.md](detection-algorithms.md).
 
 ## Status legend
 

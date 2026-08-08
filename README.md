@@ -213,7 +213,7 @@ This repository is a single Cargo package (not a workspace).
 - Recursion, panic/unwind paths, and complex drop ordering are not fully modeled.
 - Deep analysis across FFI boundaries is not supported.
 
-MIR CFG embedding covers the non-cleanup BB happy path only; cleanup/unwind, `TailCall`, etc. are incomplete. Details: [docs/cfg-control-flow-completeness.md](docs/cfg-control-flow-completeness.md). How locks / atomics / condvars / unsafe raw pointers are found and wired: [docs/shared-value-dataflow.md](docs/shared-value-dataflow.md). Bug class → model needs → coverage gaps: [docs/concurrency-bug-coverage.md](docs/concurrency-bug-coverage.md).
+MIR CFG embedding covers the non-cleanup BB happy path only; cleanup/unwind, `TailCall`, etc. are incomplete. Details: [docs/cfg-control-flow-completeness.md](docs/cfg-control-flow-completeness.md). How locks / atomics / condvars / unsafe raw pointers are found and wired: [docs/shared-value-dataflow.md](docs/shared-value-dataflow.md). Bug class → model needs → coverage gaps: [docs/concurrency-bug-coverage.md](docs/concurrency-bug-coverage.md). How detectors read the net / state graph: [docs/detection-algorithms.md](docs/detection-algorithms.md).
 
 ## License
 
