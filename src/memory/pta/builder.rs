@@ -16,9 +16,10 @@ use rustc_hir::def_id::DefId;
 use smallvec::SmallVec;
 
 use rustc_middle::mir::{
-    AggregateKind, Body, LocalKind, Operand, Place, PlaceElem, ProjectionElem, Rvalue,
-    StatementKind, TerminatorKind,
+    AggregateKind, Body, Const, ConstOperand, LocalKind, Operand, Place, PlaceElem,
+    ProjectionElem, Rvalue, StatementKind, TerminatorKind,
 };
+use rustc_middle::mir::interpret::Scalar;
 use rustc_middle::ty::{self, GenericArgsRef, Instance, TyCtxt, TypingEnv};
 use rustc_span::Spanned;
 
@@ -220,6 +221,7 @@ pub fn build_body<'a, 'tcx>(
     registry: &ModelRegistry,
     arena: &mut LocArena,
     constraints: &mut ConstraintSet,
+    closure_envs: &mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[LocId; 2]>>,
 ) -> Vec<PendingCall<'tcx>> {
     let typing_env = TypingEnv::post_analysis(tcx, caller.def_id());
     let mut builder = ConstraintBuilder {
@@ -231,6 +233,7 @@ pub fn build_body<'a, 'tcx>(
         typing_env,
         arena,
         constraints,
+        closure_envs,
         pending: Vec::new(),
         call_counter: 0,
         next_temp: 1_000_000,
@@ -272,6 +275,9 @@ struct ConstraintBuilder<'a, 'tcx> {
     typing_env: TypingEnv<'tcx>,
     arena: &'a mut LocArena,
     constraints: &'a mut ConstraintSet,
+    /// Closure DefId → def-site environment heaps, threaded up to the driver so
+    /// closure bodies can be bound to the environment that captured their upvars.
+    closure_envs: &'a mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[LocId; 2]>>,
     /// Call sites awaiting interprocedural resolution by the driver.
     pending: Vec<PendingCall<'tcx>>,
     /// Monotonic counter giving each call site a distinct fresh heap object.
@@ -322,8 +328,37 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 let mut w = self.walk();
                 Some(w.place_value(p.local.as_u32(), &proj))
             }
+            Operand::Constant(box ConstOperand { const_, .. }) => self.static_ref_global(*const_),
             _ => None,
         }
+    }
+
+    /// A constant reference to a static (`const {allocN: &STATIC}`) gets a
+    /// [`AbstractLoc::Global`] node keyed by the allocation id, so every access
+    /// to the same static (e.g. a `lazy_static!` lock) resolves to the same
+    /// abstract object and aliases. Non-static constants return `None`.
+    fn static_ref_global(&mut self, const_: Const<'tcx>) -> Option<LocId> {
+        use rustc_middle::mir::interpret::GlobalAlloc;
+        let scalar = const_.try_to_scalar()?;
+        let Scalar::Ptr(ptr, _) = scalar else {
+            return None;
+        };
+        let alloc_id = ptr.provenance.alloc_id();
+        if !matches!(self.tcx.global_alloc(alloc_id), GlobalAlloc::Static(_)) {
+            return None;
+        }
+        let empty = self.arena.empty_path();
+        let global = self.arena.global(alloc_id.0.get(), empty);
+        // Return a node that *points to* the static object (the const value is
+        // `&STATIC`), so `dst = const` copies `pts(temp) = {Global}` into the
+        // destination rather than the empty points-to set of the object itself.
+        let temp = {
+            let mut w = self.walk();
+            w.fresh()
+        };
+        self.constraints
+            .add(Constraint::AddressOf { dst: temp, obj: global });
+        Some(temp)
     }
 
     /// Store `value` into the lvalue locations of the place `lhs_local.lhs_proj`.
@@ -449,6 +484,14 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             },
             empty,
         );
+
+        // Record the def-site environment heap so the closure body's env param
+        // (`_1`) can later be bound to it by the driver. A closure may be
+        // constructed at several sites; all recorded heaps are unioned.
+        self.closure_envs
+            .entry(_def_id)
+            .or_default()
+            .push(clo_heap);
 
         // 字段级 Copy: clo_heap.field_i ⊇ upvar_value_i
         for (i, op) in fields.iter_enumerated() {

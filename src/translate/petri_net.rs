@@ -567,12 +567,17 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         let policy = self.options.config.alias_unknown_policy;
         for i in 0..lockid_vec.len() {
             for j in i + 1..lockid_vec.len() {
-                if self
+                let ri = alias_id_for(&lockid_vec[i]);
+                let rj = alias_id_for(&lockid_vec[j]);
+                let result = self
                     .alias
                     .borrow_mut()
-                    .alias(alias_id_for(&lockid_vec[i]), alias_id_for(&lockid_vec[j]))
-                    .may_alias(policy)
-                {
+                    .alias(ri, rj);
+                log::debug!(
+                    "[LOCKDBG] recv {:?} vs {:?} -> {:?}",
+                    ri, rj, result
+                );
+                if result.may_alias(policy) {
                     log::debug!(
                         "Locks {:?} and {:?} may alias",
                         lockid_vec[i],

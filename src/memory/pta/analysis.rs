@@ -12,7 +12,8 @@ extern crate rustc_middle;
 
 use std::collections::VecDeque;
 
-use rustc_data_structures::fx::FxHashSet;
+use rustc_data_structures::fx::{FxHashMap, FxHashSet};
+use rustc_hir::def_id::DefId;
 use rustc_middle::ty::{Instance, InstanceKind, TyCtxt, TypingEnv};
 use smallvec::SmallVec;
 
@@ -34,6 +35,11 @@ pub struct PointerAnalysis<'tcx> {
     policy: KCallSite,
     /// `(instance, context)` pairs already translated.
     built: FxHashSet<(Instance<'tcx>, Context)>,
+    /// Closure DefId → def-site environment heaps (from each construction site).
+    closure_envs: FxHashMap<DefId, SmallVec<[LocId; 2]>>,
+    /// Closure instances built under a context, awaiting env binding after the
+    /// main build loop (the capturing function may be built later in the queue).
+    built_closures: Vec<(Instance<'tcx>, Context, u32)>,
 }
 
 impl<'tcx> PointerAnalysis<'tcx> {
@@ -52,6 +58,8 @@ impl<'tcx> PointerAnalysis<'tcx> {
             registry: ModelRegistry::builtin(),
             policy: KCallSite::new(k),
             built: FxHashSet::default(),
+            closure_envs: FxHashMap::default(),
+            built_closures: Vec::new(),
         }
     }
 
@@ -92,11 +100,39 @@ impl<'tcx> PointerAnalysis<'tcx> {
                 &self.registry,
                 &mut self.arena,
                 &mut self.constraints,
+                &mut self.closure_envs,
             );
+            if Self::is_closure(self.tcx, inst) {
+                self.built_closures.push((inst, ctx.clone(), func));
+            }
             for pc in pending {
                 self.resolve_pending(inst, func, &ctx, pc, &mut queue);
             }
         }
+
+        // Phase 2: bind every closure's env param (`_1`) to the environment
+        // heap created at its definition site. Without this, upvars captured by
+        // a closure are unbound when the closure is built as a whole-program
+        // root, so aliasing through the capture (e.g. an `Arc<Mutex>` moved
+        // into a spawned thread) is lost. Constraints dedupe, so rebinding on a
+        // second `build_reachable` is harmless.
+        for (inst, ctx, func) in std::mem::take(&mut self.built_closures) {
+            let heaps = self.closure_envs.get(&inst.def_id()).cloned();
+            if let Some(heaps) = heaps {
+                let empty = self.arena.empty_path();
+                let env_node = self.arena.var_ctx(ctx, func, 1, empty);
+                for heap in heaps {
+                    self.constraints
+                        .add(Constraint::AddressOf { dst: env_node, obj: heap });
+                }
+            }
+        }
+    }
+
+    /// Whether `inst` is a closure (or coroutine) instance whose body reads its
+    /// captured upvars through the environment param.
+    fn is_closure(tcx: TyCtxt<'tcx>, inst: Instance<'tcx>) -> bool {
+        matches!(inst.def, InstanceKind::Item(_)) && tcx.is_closure_like(inst.def_id())
     }
 
     fn resolve_pending(
@@ -283,6 +319,99 @@ impl<'tcx> PointerAnalysis<'tcx> {
             return false;
         }
         let sb = self.collapsed_points_to(result, b, b_local);
+        !sa.is_disjoint(&sb)
+    }
+
+    /// Collapsed points-to for a receiver that may carry a single field
+    /// projection (an `AliasId.field`), covering every MIR access shape:
+    /// - the base local slot `V_local` itself,
+    /// - the direct field slot `V_local.field`,
+    /// - the offset into every pointee of the base slot, `*V_local.field`.
+    ///
+    /// The last shape is what resolves closure upvar receivers (`(*env).field`
+    /// where `env` points at the captured environment heap) and `&(*self).mu`
+    /// receivers to the object stored at the field.
+    pub fn collapsed_receiver_points_to(
+        &mut self,
+        result: &PointsToResult,
+        instance: Instance<'tcx>,
+        local: u32,
+        field: Option<u32>,
+    ) -> FxHashSet<CiKey> {
+        let mut keys = FxHashSet::default();
+        let Some(func) = self.funcs.get_id(&instance) else {
+            return keys;
+        };
+        let field_path = field.map(|f| {
+            let empty = self.arena.empty_path();
+            self.arena.extend_path(empty, ProjElem::Field(f))
+        });
+
+        // Collect base var node ids and their pointees first (this borrows the
+        // arena immutably); projection runs afterwards.
+        let mut base_nodes: Vec<LocId> = Vec::new();
+        let mut base_pointees: Vec<LocId> = Vec::new();
+        for (id, loc) in self.arena.iter_locs() {
+            if let AbstractLoc::Var {
+                func: f,
+                base,
+                path,
+                ..
+            } = loc
+            {
+                if *f == func && *base == local && self.arena.path(*path).is_empty() {
+                    keys.insert(self.arena.ci_key(id));
+                    base_nodes.push(id);
+                    for &p in result.points_to(id) {
+                        keys.insert(self.arena.ci_key(p));
+                        base_pointees.push(p);
+                    }
+                }
+            }
+        }
+
+        if let Some(fpath) = field_path {
+            for &id in &base_nodes {
+                if let Some(projected) = self.arena.project(id, fpath) {
+                    keys.extend(
+                        result
+                            .points_to(projected)
+                            .iter()
+                            .map(|&p| self.arena.ci_key(p)),
+                    );
+                }
+            }
+            for &pointee in &base_pointees {
+                if let Some(projected) = self.arena.project(pointee, fpath) {
+                    keys.extend(
+                        result
+                            .points_to(projected)
+                            .iter()
+                            .map(|&p| self.arena.ci_key(p)),
+                    );
+                }
+            }
+        }
+
+        keys
+    }
+
+    /// May-alias for receivers that may carry a single field projection.
+    pub fn collapsed_may_alias_receiver(
+        &mut self,
+        result: &PointsToResult,
+        a: Instance<'tcx>,
+        a_local: u32,
+        a_field: Option<u32>,
+        b: Instance<'tcx>,
+        b_local: u32,
+        b_field: Option<u32>,
+    ) -> bool {
+        let sa = self.collapsed_receiver_points_to(result, a, a_local, a_field);
+        if sa.is_empty() {
+            return false;
+        }
+        let sb = self.collapsed_receiver_points_to(result, b, b_local, b_field);
         !sa.is_disjoint(&sb)
     }
 

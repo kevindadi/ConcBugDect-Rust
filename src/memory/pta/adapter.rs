@@ -191,15 +191,30 @@ impl<'a, 'tcx> PtaAliasAnalysis<'a, 'tcx> {
         let ib = self.instance_of(aid2);
         match (ia, ib, &self.result) {
             (Some(ia), Some(ib), Some(result)) => {
-                if self.pta.collapsed_may_alias(
+                if self.pta.collapsed_may_alias_receiver(
                     result,
                     ia,
                     aid1.local.as_u32(),
+                    aid1.field,
                     ib,
                     aid2.local.as_u32(),
+                    aid2.field,
                 ) {
                     return ApproximateAliasKind::Probably;
                 }
+                log::debug!(
+                    "[PTADBG] {} inst{}_l{} f{:?} vs {} inst{}_l{} f{:?}: sa={:?} sb={:?}",
+                    crate::util::format_name(ia.def_id()),
+                    aid1.instance_id.index(),
+                    aid1.local.as_u32(),
+                    aid1.field,
+                    crate::util::format_name(ib.def_id()),
+                    aid2.instance_id.index(),
+                    aid2.local.as_u32(),
+                    aid2.field,
+                    self.pta.collapsed_receiver_points_to(result, ia, aid1.local.as_u32(), aid1.field),
+                    self.pta.collapsed_receiver_points_to(result, ib, aid2.local.as_u32(), aid2.field),
+                );
                 // Type-parameter heuristic: parameters of same type/index may alias
                 if self.may_alias_via_type_param(ia, aid1.local, ib, aid2.local) {
                     return ApproximateAliasKind::Possibly;

@@ -57,7 +57,16 @@ impl CallModel for ArcRcDerefModel {
 
     fn emit(&self, nodes: &CallNodes, out: &mut ConstraintSet) {
         if let Some(Some(arg)) = nodes.args.first().copied() {
+            // `dest = Arc::deref(&arc)` returns `&T`: the pointee of the Arc.
+            // Depending on how the `&arc` argument was built (a plain `&local`
+            // vs `&(*ptr)` through a static), one deref level or two is the
+            // right reading. Emitting both is a sound over-approximation that
+            // keeps aliasing through the Arc's object in both shapes.
             out.add(Constraint::Load {
+                dst: nodes.dest,
+                src: arg,
+            });
+            out.add(Constraint::Copy {
                 dst: nodes.dest,
                 src: arg,
             });

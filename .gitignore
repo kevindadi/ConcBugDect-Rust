@@ -2,5 +2,8 @@
 **/Cargo.lock
 **/tmp
 
+**.mir
+**.dot
+
 .vscode
 .DS_Store
