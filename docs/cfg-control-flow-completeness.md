@@ -21,7 +21,7 @@ We do **not** embed the full MIR CFG: cleanup / unwind successors, `TailCall`, m
 
 So: happy-path BB-CFG ≈ yes. Full MIR control flow ≈ no.
 
-Main-path branches are often **over-approximate** (no discriminant constraints). Exception paths are **under-approximate** (missing edges). That matters because detectors assume control edges are there before aliasing can attach resource places correctly.
+For **current detectors** (deadlock on RAII locks/condvars, datarace on raw-ptr unsafe ops, atomic load/store), that happy path is usually enough — those ops are wired on normal Call/Drop/Assign edges. Missing cleanup CF is a real hole only when the bug depends on unwind-only unlocks or accesses. Shared-value wiring: [shared-value-dataflow.md](shared-value-dataflow.md).
 
 ## Encoding
 
