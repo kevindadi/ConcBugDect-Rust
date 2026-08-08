@@ -2,180 +2,253 @@
 
 How each bug mode reads the **state graph** (or explores the net) and what net pattern counts as a hit.
 
-Pipeline before detection:
-
-```text
-Petri net N  →  StateGraph SG (reachable markings + firing edges)  →  detector
-```
-
-Shared assumption: resource identity (same lock / loc / atomic) was already fixed when building `N`. Detectors only look at markings and typed transitions.
+Shared assumption: resource identity (same lock / loc / atomic) was already fixed when building the net. Detectors only look at markings and typed transitions.
 
 Code: `src/detect/deadlock.rs`, `datarace.rs`, `atomicity_violation.rs`, `atomic_violation_detector.rs`.
 
----
+## Overview
 
-## Common objects
+```mermaid
+flowchart TB
+  MIR["MIR + alias"] --> N["Petri net N"]
+  N --> SG["StateGraph SG"]
 
-| Object | Role |
-| ------ | ---- |
-| Marking | Token count per place (control BB + resource places) |
-| Enabled transition | Firable under current marking (control + resource presets satisfied) |
-| StateGraph node | One reachable marking (+ enabled summaries for viz/detect) |
-| StateGraph edge | Fired transition: `TransitionType` + token delta |
+  SG --> DL["deadlock"]
+  SG --> DR["datarace"]
+  SG --> AT["atomic - SG path"]
+  N --> AV["atomic - AV explorer"]
 
-Interesting `TransitionType`s for bugs:
+  DL --> P1["stuck marking / lock-stuck cycle"]
+  DR --> P2["same loc: Write co-enabled with Read/Write"]
+  AT --> P3["load history has ≥ 2 stores"]
+  AV --> P4["AV1 / AV2 / AV3 on firing trace"]
+```
 
-- Sync: `Lock` / `RwLockRead` / `RwLockWrite` / `Unlock` / `Wait` / `Notify`
-- Threads: `Spawn` / `Join`
-- Memory: `UnsafeRead` / `UnsafeWrite`
-- Atomics: `AtomicLoad` / `AtomicStore` / `AtomicCmpXchg`
+Bug pattern → what we look for on the net / SG:
+
+```mermaid
+flowchart LR
+  subgraph deadlock
+    D1["marking with no enabled transition<br/>and not main_end"]
+  end
+
+  subgraph datarace
+    R1["one marking enables<br/>UnsafeWrite L and UnsafeRead/Write L"]
+  end
+
+  subgraph atomicity
+    A1["trace: Load/Store of i<br/>interrupted by Store of j on same L"]
+  end
+```
+
+| Mode | Where | Bug ≅ |
+| ---- | ----- | ----- |
+| `deadlock` | SG | No enabled fire and not `main_end`, or stable cycle with locks stuck disabled |
+| `datarace` | SG | Same loc: `UnsafeWrite` co-enabled with `UnsafeRead` / `UnsafeWrite` |
+| `atomic` | SG or net trace | Interleaved Load/Store (AV*) or multi-store history before a load |
+| `pointsto` | dump | no concurrency query |
+
+Interesting `TransitionType`s: `Lock` / `Unlock` / `Wait` / `Notify`, `Spawn` / `Join`, `UnsafeRead` / `UnsafeWrite`, `AtomicLoad` / `AtomicStore` / `AtomicCmpXchg`.
 
 ---
 
 ## Deadlock (`--mode deadlock`)
 
-**Input:** `StateGraph`  
-**Output:** `deadlock_report.txt`
+**Input:** `StateGraph` → **Output:** `deadlock_report.txt`
 
 ### Pattern A — terminal non-exit marking (primary)
 
-On the state graph, a node `s` is a deadlock witness if:
+Report state `s` if it has **no outgoing edges** and is **not** normal exit (`main_end` has no token).
 
-1. `s` has **no outgoing edges** (no enabled firing from that marking), and  
-2. `s` is **not** normal termination: no token on a place whose name contains `main_end`.
+State-graph view:
 
-On the net this usually means: some thread tokens sit on control places waiting for `Lock` / `Wait` / `Recv`-like transitions, while the required resource tokens are held elsewhere (or never produced), so nothing can fire and `main` never reached `main_end`.
+```mermaid
+flowchart LR
+  s0(("s0")) -->|"Lock A"| s1(("s1"))
+  s1 -->|"Lock B"| s2(("s2 stuck"))
+  s0 -->|"finish"| ok(("main_end"))
 
-```text
-marking s:  thread_i @ BB_lock,  Mutex_k.tokens = 0,  …
-            no transition enabled
-            main_end empty
-         ⇒  report s
+  s2 -->|"out-degree = 0"| hit["DEADLOCK"]
+  ok --> fine["OK"]
+```
+
+Net view of classic AB-BA (two threads, two mutexes):
+
+```mermaid
+flowchart TB
+  Ti["thread i<br/>holds A, waits Lock B"]
+  Tj["thread j<br/>holds B, waits Lock A"]
+
+  MA[(Mutex A<br/>tokens = 0)]
+  MB[(Mutex B<br/>tokens = 0)]
+
+  Ti -.->|"holds"| MA
+  Tj -.->|"holds"| MB
+  Ti -->|"needs token"| MB
+  Tj -->|"needs token"| MA
+
+  Ti --> stuck["no transition enabled"]
+  Tj --> stuck
+  stuck --> hit["DEADLOCK"]
 ```
 
 ### Pattern B — cyclic wait with stuck locks (fallback)
 
-If A finds nothing, scan **cycles** in the state graph. Keep a cycle if:
+If A finds nothing: a **stable cycle** where some (not all) locks stay disabled on every state.
 
-- for some lock ids, every `Lock`/`RwLock*` transition of that lock stays **disabled** on every state of the cycle, and  
-- not all locks are disabled that way (filters “everything frozen”), and  
-- the cycle is **stable** (all successors of cycle states stay inside the cycle).
+```mermaid
+flowchart LR
+  s1(("s1")) --> s2(("s2"))
+  s2 --> s3(("s3"))
+  s3 --> s1
 
-Net reading: the system can keep stuttering in a set of markings where contended lock acquires never become enabled.
+  s2 -.-> note["Lock A / Lock B disabled<br/>on every state in cycle"]
+  note --> hit["DEADLOCK"]
+```
 
-### Not used today
-
-`dependency_deadlocks` is an empty set (lock-order graph stub). Detection is reachability / cycle based, not a separate waits-for graph.
-
-### Typical program → net situations
+### Program → net
 
 | Program bug | Net / SG situation |
 | ----------- | ------------------ |
-| AB-BA lock order | Two `Lock` transitions each need the other’s mutex token; reachable marking with both threads before second lock, both mutexes 0/held, no fire → A |
-| Self-deadlock / reentrant mistake | Same mutex place capacity 1; second `Lock` disabled forever while guard still held |
-| Condvar wait without notify | `Wait` ret needs condvar token; `Notify` never fires → stuck, often A |
-| Channel deadlock | send/recv blocked on channel place tokens → A |
+| AB-BA lock order | Pattern A: both wait, mutex tokens unavailable |
+| Condvar wait without notify | `Wait` ret needs condvar token → A |
+| Channel deadlock | send/recv blocked on channel place → A |
+
+`dependency_deadlocks` is unused (empty stub).
 
 ---
 
 ## Data race (`--mode datarace`)
 
-**Input:** `StateGraph`  
-**Output:** `datarace_report.txt`
+**Input:** `StateGraph` → **Output:** `datarace_report.txt`
 
 ### Pattern — conflicting unsafe accesses co-enabled
 
-For each state `s`:
+In one marking `s`: same `location_id`, ≥2 sites, pair is R/W or W/W (not R/R).
 
-1. Collect outgoing edge transitions typed `UnsafeRead` / `UnsafeWrite` (each carries `location_id` ≈ alias id, span, bb, ty).  
-2. Group by `location_id`.  
-3. If ≥2 **access sites** on the same location, and some pair has at least one write (R/W or W/W), report a race at `s`.
+```mermaid
+flowchart TB
+  s(("marking s"))
 
-Net reading: in marking `s`, two (or more) memory events on the **same resource place identity** are simultaneously firable — no mutual exclusion in the net between them.
+  s -->|"enabled"| W["UnsafeWrite(L)"]
+  s -->|"enabled"| R["UnsafeRead(L)"]
 
-```text
-marking s enables:
-  t1 = UnsafeWrite(loc=L, …)
-  t2 = UnsafeRead(loc=L, …)   or another UnsafeWrite(L)
-⇒ data race on L
+  W --> L[("shared loc L")]
+  R --> L
+
+  W --> race["DATA RACE"]
+  R --> race
 ```
 
-Read/read only is ignored. Site pairing prefers mixed R/W when scoring.
+Write–write:
 
-### Typical program → net situations
+```mermaid
+flowchart LR
+  s(("s")) -->|"enabled"| W1["UnsafeWrite L"]
+  s -->|"enabled"| W2["UnsafeWrite L"]
+  W1 --> hit["DATA RACE"]
+  W2 --> hit
+```
+
+Contrast — serialized by a lock (not a race):
+
+```mermaid
+flowchart LR
+  s0(("s0")) -->|"Lock M"| s1(("s1"))
+  s1 -->|"UnsafeWrite L"| s2(("s2"))
+  s2 -->|"Unlock M"| s3(("s3"))
+  s3 -->|"UnsafeRead L"| s4(("s4"))
+```
+
+`UnsafeWrite` and `UnsafeRead` are never co-enabled in the same marking.
+
+### Program → net
 
 | Program bug | Net / SG situation |
 | ----------- | ------------------ |
-| Two threads `*p =` / `*p` without sync | Both accesses lowered to `Unsafe*`; same loc place; some marking enables both |
-| Missing lock around shared raw ptr | No `Lock` serialization between the two `Unsafe*` transitions |
+| Racy `*p` without sync | Both `Unsafe*`; same loc; some `s` enables both |
+| Missing lock | No `Lock` between the two accesses |
 
-If alias under-merges, `location_id`s differ → this pattern never fires (FN). Over-merge → FP.
+Alias under-merge → FN. Over-merge → FP.
 
 ---
 
-## Atomicity violation
+## Atomicity violation (`--mode atomic`)
 
-Two implementations:
+| Build | Algorithm |
+| ----- | --------- |
+| default | SG heuristic (`AtomicityViolationDetector`) |
+| `--features atomic-violation` | Net fire + AV1/2/3 (`detect_atomicity_violations`) |
 
-| Build | Algorithm | Entry |
-| ----- | --------- | ----- |
-| default (no feature) | State-graph heuristic | `AtomicityViolationDetector` |
-| `--features atomic-violation` | Net exploration + AV1/2/3 rules | `detect_atomicity_violations` |
+### Feature path — AV patterns
 
-Mode: `--mode atomic` (feature required for the second path; callback uses net explorer when feature is on).
+Same atomic `L`, threads `i` ≠ `j`. A remote store breaks an interval of `i`:
 
-### Feature path — AV patterns on firing traces
+```mermaid
+sequenceDiagram
+  participant i as thread i
+  participant L as atomic L
+  participant j as thread j
 
-Explore firings from the initial marking (bounded states/depth). Atomic transitions are events `(tid, alias, Load|Store)`.
-
-Match three rules (same `alias`, two tids `i`≠`j`):
-
-| Id | Bench-style name | Event shape | Meaning |
-| -- | ---------------- | ----------- | ------- |
-| AV1 | load–store–store | thread `i`: Load … then Store; thread `j`: Store in between | Interval after load broken by remote store before `i` stores |
-| AV2 | store–store–load | thread `i`: Store … then Load; thread `j`: Store in between | Remote store between `i`’s store and later load |
-| AV3 | load–store–load | thread `i`: Load … then Load; thread `j`: Store in between | Remote store between two loads of `i` |
-
-```text
-trace …  Load_i(L)  …  Store_j(L)  …  Store_i(L)  …   ⇒ AV1
+  Note over i,j: AV1 load / store / store
+  i->>L: Load
+  j->>L: Store
+  i->>L: Store
 ```
 
-Net role: resource place for `L` plus control/segment wiring make those interleavings reachable; the detector is **trace pattern matching**, not “stuck marking”.
+```mermaid
+sequenceDiagram
+  participant i as thread i
+  participant L as atomic L
+  participant j as thread j
+
+  Note over i,j: AV2 store / store / load
+  i->>L: Store
+  j->>L: Store
+  i->>L: Load
+```
+
+```mermaid
+sequenceDiagram
+  participant i as thread i
+  participant L as atomic L
+  participant j as thread j
+
+  Note over i,j: AV3 load / store / load
+  i->>L: Load
+  j->>L: Store
+  i->>L: Load
+```
+
+```mermaid
+flowchart TB
+  AV1["AV1: Load_i → Store_j → Store_i"]
+  AV2["AV2: Store_i → Store_j → Load_i"]
+  AV3["AV3: Load_i → Store_j → Load_i"]
+  AV1 --> hit["ATOMICITY VIOLATION"]
+  AV2 --> hit
+  AV3 --> hit
+```
+
+| Id | Shape | Meaning |
+| -- | ----- | ------- |
+| AV1 | Loadᵢ … Storeⱼ … Storeᵢ | Remote store before `i` stores after its load |
+| AV2 | Storeᵢ … Storeⱼ … Loadᵢ | Remote store between `i`’s store and later load |
+| AV3 | Loadᵢ … Storeⱼ … Loadᵢ | Remote store between two loads of `i` |
 
 ### Default path — load with ≥2 related stores in history
 
-On the state graph, for an outgoing `AtomicLoad` at state `s`, walk **incoming** history; collect `AtomicStore`s on the same `var_id` whose orderings are allowed vs the load. If ≥2 such stores, report a violation pattern (load + those stores).
-
-Coarser than AV1/2/3; ordering filter is a small Acquire/Release-style table.
-
-### Typical program → net situations
-
-| Program bug | Net / SG situation |
-| ----------- | ------------------ |
-| Check-then-act on atomic | Load and later store of `i` with foreign store interleaved → AV* or ≥2 stores before load |
-| Broken flag publish | Same alias place; stores/loads typed with order tags |
-
----
-
-## Points-to (`--mode pointsto`)
-
-Not a concurrency pattern on SG. Stops after pointer analysis / net build artifacts (`points_to_report*.txt`). No deadlock/race query.
-
----
-
-## Mode vs net query (summary)
-
-| Mode | Where | Bug ≅ |
-| ---- | ----- | ----- |
-| `deadlock` | SG | Unfinished terminal marking, or stable cycle with locks stuck disabled |
-| `datarace` | SG | Same loc: `UnsafeWrite` co-enabled with `UnsafeRead` or `UnsafeWrite` |
-| `atomic` | SG or net trace | Interleaved atomic Load/Store patterns (AV rules or multi-store history) |
-| `pointsto` | analysis dump | — |
+```mermaid
+flowchart TB
+  load["AtomicLoad at state s"] --> walk["walk SG predecessors"]
+  walk --> stores["AtomicStore same var<br/>ordering allowed"]
+  stores -->|"count ≥ 2"| hit["ATOMICITY VIOLATION"]
+```
 
 ---
 
 ## What detectors do *not* decide
 
 - Whether two guards are the same mutex (alias at construction).  
-- Path feasibility / numeric branch conditions (all Switch edges may exist).  
-- Full C++11/Rust memory-model HB (orders are tags / coarse filters only).
+- Path feasibility / numeric branches.  
+- Full memory-model HB (orders are tags / coarse filters only).
