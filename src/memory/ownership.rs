@@ -82,6 +82,16 @@ pub fn is_box_arc_rc_new(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     is_box_arc_rc_new_path(&tcx.def_path_str(def_id))
 }
 
+/// `Box::into_raw(b) -> *mut T`: leaks the box and returns a raw pointer to its
+/// pointee. Modeled directly (`dest ⊇ arg`) so the raw pointer resolves to the
+/// shared heap without descending into the std `into_raw_with_allocator` /
+/// `deref_mut` / `as_mut_ptr` chain.
+#[inline]
+pub fn is_box_into_raw(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    let path = tcx.def_path_str(def_id);
+    path.contains("boxed::Box") && path.ends_with("::into_raw")
+}
+
 /// Pure-string test for the deref method names.
 #[inline]
 pub fn is_deref_method_name(method: &str) -> bool {

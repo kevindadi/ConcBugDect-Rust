@@ -781,6 +781,36 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             // field-wise, and point `dest` at that heap, so dereferencing any
             // clone reaches the same shared object.
             if ownership::is_box_arc_rc_new(def_id, self.tcx) {
+                // The smart pointer always points at the fresh heap, even when
+                // the boxed value is a constant operand (`Box::new(0)`).
+                self.constraints.add(Constraint::AddressOf {
+                    dst: dest,
+                    obj: fresh_heap,
+                });                // The pointer's *internal* pointer fields hold the heap address.
+                // An inlined `Box::into_raw` reads them as `box.0.0` field
+                // accesses, so point every field-slot prefix of the pointer's
+                // type at the heap to make the raw pointer resolve to the shared
+                // object.
+                let box_ty = self.body.local_decls[destination.local].ty;
+                let box_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
+                    self.tcx,
+                    self.typing_env,
+                    ty::EarlyBinder::bind(box_ty),
+                );
+                let box_paths = leaf_field_paths(self.tcx, self.typing_env, box_ty, self.arena);
+                for p in box_paths {
+                    let elems: Vec<ProjElem> = self.arena.path(p).to_vec();
+                    let mut prefix = self.arena.empty_path();
+                    for e in elems {
+                        prefix = self.arena.extend_path(prefix, e);
+                        if let Some(dest_field) = self.arena.project(dest, prefix) {
+                            self.constraints.add(Constraint::AddressOf {
+                                dst: dest_field,
+                                obj: fresh_heap,
+                            });
+                        }
+                    }
+                }
                 if let Some(Some(value)) = arg_nodes.first().copied() {
                     let boxed_ty = self.caller.instantiate_mir_and_normalize_erasing_regions(
                         self.tcx,
@@ -796,6 +826,19 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                         value,
                         &paths,
                     );
+                }
+                return;
+            }
+
+            // `Box::into_raw(b) -> *mut T`: the result points to the box's
+            // pointee. Model directly so the raw pointer resolves to the shared
+            // heap without descending into the std chain.
+            if ownership::is_box_into_raw(def_id, self.tcx) {
+                if let Some(Some(arg)) = arg_nodes.first().copied() {
+                    self.constraints.add(Constraint::Copy {
+                        dst: dest,
+                        src: arg,
+                    });
                 }
                 return;
             }

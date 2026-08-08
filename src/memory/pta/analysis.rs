@@ -282,6 +282,8 @@ impl<'tcx> PointerAnalysis<'tcx> {
                     continue;
                 }
                 if let Some(pj) = self.arena.project(param, p) {
+                    // Pointer/ref arg: the struct is the arg's pointee, so
+                    // project the pointees by p and read the value there.
                     let temp = self.fresh_temp_loc();
                     self.constraints.add(Constraint::Offset {
                         dst: temp,
@@ -292,6 +294,24 @@ impl<'tcx> PointerAnalysis<'tcx> {
                         dst: pj,
                         src: temp,
                     });
+                    // By-value aggregate arg: the struct *is* the arg value, so
+                    // its fields live in the arg's own field slots (`arg·p`).
+                    // Copy those directly (a no-op when the arg is a reference).
+                    if let crate::memory::pta::loc::AbstractLoc::Var {
+                        ctx: actx,
+                        func: afunc,
+                        base: abase,
+                        path: apath,
+                    } = self.arena.loc(arg).clone()
+                    {
+                        if self.arena.path(apath).is_empty() {
+                            let arg_field = self.arena.var_ctx(actx, afunc, abase, p);
+                            self.constraints.add(Constraint::Copy {
+                                dst: pj,
+                                src: arg_field,
+                            });
+                        }
+                    }
                 }
             }
         }
