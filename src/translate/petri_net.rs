@@ -42,7 +42,7 @@ fn union(union_find: &mut FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId, 
 pub struct PetriNet<'analysis, 'tcx> {
     options: Options,
     tcx: rustc_middle::ty::TyCtxt<'tcx>,
-    pub net: Net,
+    pub net: PtBuilder,
     callgraph: &'analysis CallGraph<'tcx>,
     pub alias: RefCell<AliasEngine<'analysis, 'tcx>>,
     functions: FunctionRegistry,
@@ -71,7 +71,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         capacity: u64,
         span: String,
     ) -> PlaceId {
-        let place = Place::new(name, initial, capacity, PlaceType::Resources, span);
+        let place = PtPlace::new(name, initial, capacity, PlaceType::Resources, span);
         self.net.add_place(place)
     }
 
@@ -84,7 +84,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         Self {
             options,
             tcx,
-            net: Net::empty(),
+            net: PtBuilder::empty(),
             callgraph,
             alias,
             functions: FunctionRegistry::new(),
@@ -499,7 +499,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         with_token: bool,
     ) -> (PlaceId, PlaceId) {
         let start = if with_token {
-            Place::new(
+            PtPlace::new(
                 format!("{}_start", func_name),
                 1,
                 1,
@@ -507,7 +507,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             )
         } else {
-            Place::new(
+            PtPlace::new(
                 format!("{}_start", func_name),
                 0,
                 1,
@@ -515,7 +515,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             )
         };
-        let end = Place::new(
+        let end = PtPlace::new(
             format!("{}_end", func_name),
             0,
             1,
@@ -676,7 +676,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
     pub fn get_or_insert_node(&mut self, def_id: DefId) -> (PlaceId, PlaceId) {
         self.functions.get_or_insert(def_id, || {
             let func_name = self.tcx.def_path_str(def_id);
-            let func_start = Place::new(
+            let func_start = PtPlace::new(
                 format!("{}_start", func_name),
                 0,
                 1,
@@ -684,7 +684,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             );
             let func_start_node_id = self.net.add_place(func_start);
-            let func_end = Place::new(
+            let func_end = PtPlace::new(
                 format!("{}_end", func_name),
                 0,
                 1,

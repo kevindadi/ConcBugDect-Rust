@@ -37,7 +37,7 @@ pub struct BodyToPetriNet<'translate, 'analysis, 'tcx> {
     body: &'translate Body<'tcx>,
     tcx: TyCtxt<'tcx>,
     callgraph: &'translate CallGraph<'tcx>,
-    pub net: &'translate mut Net,
+    pub net: &'translate mut PtBuilder,
     alias: &'translate mut RefCell<AliasEngine<'analysis, 'tcx>>,
     pub lockguards: Arc<LockGuardMap<'tcx>>,
     functions: &'translate FunctionRegistry,
@@ -102,7 +102,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         body: &'translate Body<'tcx>,
         tcx: TyCtxt<'tcx>,
         callgraph: &'translate CallGraph<'tcx>,
-        net: &'translate mut Net,
+        net: &'translate mut PtBuilder,
         alias: &'translate mut RefCell<AliasEngine<'analysis, 'tcx>>,
         lockguards: Arc<LockGuardMap<'tcx>>,
         functions: &'translate FunctionRegistry,
@@ -162,11 +162,11 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             let tid = s.instance_id.index();
             s.seg.seg_index.insert(tid, 0);
             let seg_place = s.ensure_seg_place(tid, 0);
-            if let Some(place) = s.net.get_place_mut(seg_place) {
-                place.tokens = 1;
-                if place.capacity < 1 {
-                    place.capacity = 1;
-                }
+            s.net.set_place_tokens(seg_place, 1);
+            if let Some(place) = s.net.place_mut(seg_place)
+                && place.capacity.map_or(true, |c| c < 1)
+            {
+                place.capacity = Some(1);
             }
         }
 

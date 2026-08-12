@@ -164,3 +164,26 @@ impl KeyApiRegex {
         }
     }
 }
+
+impl From<AliasId> for unipn::pt::AliasId {
+    fn from(a: AliasId) -> Self {
+        unipn::pt::AliasId {
+            instance_id: a.instance_id.index(),
+            local: a.local.as_usize(),
+            array_index: a.array_index,
+            field: a.field,
+        }
+    }
+}
+
+impl From<AtomicOrdering> for unipn::pt::AtomicOrdering {
+    fn from(o: AtomicOrdering) -> Self {
+        match o {
+            AtomicOrdering::Relaxed => unipn::pt::AtomicOrdering::Relaxed,
+            AtomicOrdering::Release => unipn::pt::AtomicOrdering::Release,
+            AtomicOrdering::Acquire => unipn::pt::AtomicOrdering::Acquire,
+            AtomicOrdering::AcqRel => unipn::pt::AtomicOrdering::AcqRel,
+            AtomicOrdering::SeqCst => unipn::pt::AtomicOrdering::SeqCst,
+        }
+    }
+}

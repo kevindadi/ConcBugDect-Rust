@@ -203,7 +203,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             move |alias_id, order, span_str| {
                 TransitionType::AtomicLoad(
                     alias_id.clone().into(),
-                    order.clone(),
+                    order.clone().into(),
                     span_str,
                     instance_index,
                 )
@@ -234,7 +234,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             move |alias_id, order, span_str| {
                 TransitionType::AtomicStore(
                     alias_id.clone().into(),
-                    order.clone(),
+                    order.clone().into(),
                     span_str,
                     instance_index,
                 )
@@ -271,7 +271,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 {
                     self.net.add_output_arc(*node, bb_end, 1);
 
-                    if let Some(transition) = self.net.get_transition_mut(bb_end) {
+                    if let Some(transition) = self.net.transition_mut(bb_end) {
                         transition.transition_type = TransitionType::Notify(node.index());
                     }
                     break;
@@ -456,7 +456,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                     | LockGuardTy::SpinMutex(_) => {
                         self.net.add_output_arc(lock_node, bb_end, 1);
 
-                        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+                        if let Some(transition) = self.net.transition_mut(bb_end) {
                             transition.transition_type = TransitionType::Unlock(lock_node.index());
                         }
                     }
@@ -466,7 +466,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                     | LockGuardTy::SpinRead(_) => {
                         self.net.add_output_arc(lock_node, bb_end, 1);
 
-                        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+                        if let Some(transition) = self.net.transition_mut(bb_end) {
                             transition.transition_type = TransitionType::Unlock(lock_node.index());
                         }
                     }
@@ -476,7 +476,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                             bb_end,
                             crate::translate::structure::RWLOCK_CAPACITY,
                         );
-                        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+                        if let Some(transition) = self.net.transition_mut(bb_end) {
                             transition.transition_type = TransitionType::Unlock(lock_node.index());
                         }
                     }

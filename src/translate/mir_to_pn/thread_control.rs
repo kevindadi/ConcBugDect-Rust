@@ -192,7 +192,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             );
         }
 
-        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+        if let Some(transition) = self.net.transition_mut(bb_end) {
             transition.transition_type = TransitionType::Join(callee_func_name.to_string());
         }
 
@@ -216,7 +216,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         if self.return_transition.index() == 0 {
             let bb_term_name = crate::transition_name!(callee_func_name, bb_idx, "return");
             let bb_term_transition =
-                Transition::new_with_transition_type(bb_term_name, TransitionType::Function);
+                PtTransition::new_with_transition_type(bb_term_name, TransitionType::Function);
             self.return_transition = self.net.add_transition(bb_term_transition);
         }
 
@@ -280,7 +280,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             );
         }
 
-        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+        if let Some(transition) = self.net.transition_mut(bb_end) {
             transition.transition_type = TransitionType::Spawn(callee_func_name.to_string());
         }
         self.connect_to_target(bb_idx, bb_end, target);
@@ -294,7 +294,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         bb_idx: BasicBlock,
         bb_end: TransitionId,
     ) {
-        if let Some(transition) = self.net.get_transition_mut(bb_end) {
+        if let Some(transition) = self.net.transition_mut(bb_end) {
             transition.transition_type = TransitionType::Join(callee_func_name.to_string());
         }
 
