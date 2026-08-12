@@ -4,7 +4,7 @@ use crate::concurrency::blocking::BlockingCollector;
 use crate::concurrency::channel::{ChannelCollector, ChannelInfo, EndpointType};
 use crate::memory::pointsto::AliasId;
 use crate::memory::unsafe_memory::UnsafeAnalyzer;
-use crate::net::structure::PlaceType;
+use unipn::pt::PlaceType;
 use crate::translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry};
 use crate::util::format_name;
 use petgraph::graph::NodeIndex;
@@ -19,7 +19,8 @@ use std::time::Instant;
 use super::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::concurrency::blocking::{LockGuardId, LockGuardMap, LockGuardTy};
 use crate::memory::alias_engine::AliasEngine;
-use crate::net::{Net, Place, PlaceId};
+use unipn::pt::{PtBuilder, PtPlace};
+use unipn::PlaceId;
 use crate::translate::mir_to_pn::BodyToPetriNet;
 
 fn find(union_find: &FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId) -> LockGuardId {

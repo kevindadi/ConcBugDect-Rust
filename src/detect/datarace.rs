@@ -1,6 +1,5 @@
-use crate::analysis::reachability::StateGraph;
-use crate::net::index_vec::Idx;
-use crate::net::structure::TransitionType;
+use unipn::analysis::pt::reachability::StateGraph;
+use unipn::pt::TransitionType;
 use crate::report::{RaceCondition, RaceOperation, RaceReport};
 use petgraph::graph::NodeIndex;
 use std::time::Instant;
@@ -513,9 +512,9 @@ fn is_scalar_like_type(data_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::reachability::StateGraph;
+    use unipn::analysis::pt::reachability::StateGraph;
     use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
+    use unipn::pt::{PtPlace, PlaceType, PtTransition, TransitionType};
 
     fn build_data_race_net() -> Net {
         let mut net = Net::empty();
@@ -809,7 +808,7 @@ mod tests {
 
     #[test]
     fn detects_race_via_merged_unsafe_access() {
-        use crate::net::structure::UnsafeOp;
+        use unipn::pt::UnsafeOp;
 
         let mut net = Net::empty();
         let control = net.add_place(Place::new(
@@ -864,7 +863,7 @@ mod tests {
 
     #[test]
     fn merged_unsafe_access_write_wins_over_reads() {
-        use crate::net::structure::UnsafeOp;
+        use unipn::pt::UnsafeOp;
 
         let mut net = Net::empty();
         let control = net.add_place(Place::new(

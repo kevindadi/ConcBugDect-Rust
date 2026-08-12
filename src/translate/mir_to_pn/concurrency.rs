@@ -4,8 +4,9 @@ use super::BodyToPetriNet;
 use crate::{
     concurrency::atomic::AtomicOrdering,
     memory::pointsto::AliasId,
-    net::{Place, PlaceId, Transition, TransitionId, TransitionType, structure::PlaceType},
 };
+use unipn::pt::{PlaceType, PtPlace, PtTransition, TransitionType};
+use unipn::{PlaceId, TransitionId};
 use rustc_middle::mir::BasicBlock;
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {

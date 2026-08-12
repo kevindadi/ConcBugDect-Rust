@@ -6,12 +6,11 @@
 //! the ordering-segment places in the net, so the witness search itself only
 //! matches load/store kinds and thread/alias identity.
 
-use crate::analysis::reachability::StateGraph;
+use unipn::analysis::pt::reachability::StateGraph;
 use crate::concurrency::atomic::AtomicOrdering;
 use crate::memory::pointsto::AliasId;
-use crate::net::ids::TransitionId;
-use crate::net::index_vec::Idx;
-use crate::net::structure::TransitionType;
+use unipn::TransitionId;
+use unipn::pt::TransitionType;
 use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
 use petgraph::Direction;
 use petgraph::graph::NodeIndex;
@@ -417,10 +416,10 @@ fn dedupe_patterns(witnesses: &[Witness]) -> Vec<ViolationPattern> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::reachability::StateGraph;
+    use unipn::analysis::pt::reachability::StateGraph;
     use crate::concurrency::atomic::AtomicOrdering;
     use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
+    use unipn::pt::{PtPlace, PlaceType, PtTransition, TransitionType};
     use petgraph::graph::NodeIndex;
     use rustc_middle::mir::Local;
 

@@ -1,7 +1,6 @@
-use crate::analysis::reachability::{StateEdge, StateGraph};
-use crate::net::ids::{PlaceId, TransitionId};
-use crate::net::index_vec::Idx;
-use crate::net::structure::{PlaceType, TransitionType};
+use unipn::analysis::pt::reachability::{StateEdge, StateGraph};
+use unipn::{PlaceId, TransitionId};
+use unipn::pt::{PlaceType, TransitionType};
 use crate::report::{
     BlockedTransition, DeadlockReport, DeadlockState, DeadlockTrace, ResourceStatus,
     ResourceTraceStep,
@@ -554,9 +553,9 @@ impl<'a> DeadlockDetector<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::reachability::StateGraph;
+    use unipn::analysis::pt::reachability::StateGraph;
     use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
+    use unipn::pt::{PtPlace, PlaceType, PtTransition, TransitionType};
 
     fn build_deadlock_net() -> Net {
         let mut net = Net::empty();

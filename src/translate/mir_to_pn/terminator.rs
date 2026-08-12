@@ -1,7 +1,8 @@
 //! Terminators: `init_basic_block`, `handle_start_block`, `handle_goto`, `handle_switch`, `handle_return`, …
 
 use super::BodyToPetriNet;
-use crate::net::{Transition, TransitionId, TransitionType};
+use unipn::pt::{PtTransition, TransitionType};
+use unipn::TransitionId;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Body, SwitchTargets};
 

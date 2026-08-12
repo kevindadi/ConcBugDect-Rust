@@ -1,7 +1,7 @@
 extern crate rustc_driver;
 extern crate rustc_hir;
 
-use crate::analysis::reachability::{StateGraph, StateGraphConfig};
+use unipn::analysis::pt::reachability::{StateGraph, StateGraphConfig};
 use crate::config::ReportLevel;
 use crate::detect::atomicity_violation::AtomicityViolationDetector;
 use crate::detect::datarace::DataRaceDetector;
@@ -178,7 +178,7 @@ impl PTACallbacks {
 
         let mut net_reduce_time = None::<std::time::Duration>;
         if self.options.config.reduce_net {
-            use crate::net::reduce::{ReductionOptions, reduce_in_place};
+            use unipn::analysis::pt::reduce::{ReductionOptions, reduce_in_place};
             let reduce_start = Instant::now();
             match reduce_in_place(&mut pn.net, ReductionOptions::default()) {
                 Ok(result) => {

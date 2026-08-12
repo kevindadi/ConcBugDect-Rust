@@ -1,7 +1,7 @@
 //! Shared closure lowering: resolve closure/fn `DefId` and places from `Operand`.
 
 use super::BodyToPetriNet;
-use crate::net::PlaceId;
+use unipn::PlaceId;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{Const, Operand};
 use rustc_span::Spanned;

@@ -7,9 +7,10 @@ use crate::{
         blocking::{CondVarId, LockGuardId, LockGuardTy},
     },
     memory::pointsto::AliasId,
-    net::{Idx, PlaceId, TransitionId, TransitionType},
     util::has_pn_attribute,
 };
+use unipn::pt::TransitionType;
+use unipn::{PlaceId, TransitionId};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Operand};
 use rustc_span::Spanned;
