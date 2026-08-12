@@ -4,7 +4,8 @@ use rustc_hir::def_id::DefId;
 
 use crate::concurrency::atomic::AtomicOrdering;
 use crate::config::PnConfig;
-use crate::{memory::pointsto::AliasId, net::PlaceId};
+use crate::memory::pointsto::AliasId;
+use unipn::PlaceId;
 
 /// Token capacity of an `RwLock` resource place. A read lock consumes one
 /// token (so up to `RWLOCK_CAPACITY` concurrent readers); a write lock is

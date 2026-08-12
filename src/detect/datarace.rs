@@ -1,8 +1,8 @@
-use unipn::analysis::pt::reachability::StateGraph;
-use unipn::pt::TransitionType;
 use crate::report::{RaceCondition, RaceOperation, RaceReport};
 use petgraph::graph::NodeIndex;
 use std::time::Instant;
+use unipn::analysis::pt::reachability::StateGraph;
+use unipn::pt::TransitionType;
 
 use rustc_data_structures::fx::FxHashMap;
 
@@ -111,8 +111,10 @@ impl<'a> DataRaceDetector<'a> {
                     .map(|access| access.span.clone())
                     .min()
                     .unwrap_or_default(),
-                read_representative: Self::select_site_representative(&site_accesses, false).cloned(),
-                write_representative: Self::select_site_representative(&site_accesses, true).cloned(),
+                read_representative: Self::select_site_representative(&site_accesses, false)
+                    .cloned(),
+                write_representative: Self::select_site_representative(&site_accesses, true)
+                    .cloned(),
                 site,
             })
             .collect::<Vec<_>>();
@@ -187,10 +189,7 @@ impl<'a> DataRaceDetector<'a> {
         candidates
     }
 
-    fn pair_priority(
-        left: &StateAccess,
-        right: &StateAccess,
-    ) -> PairPriority {
+    fn pair_priority(left: &StateAccess, right: &StateAccess) -> PairPriority {
         let mut signatures = [
             Self::state_access_signature(left),
             Self::state_access_signature(right),
@@ -293,10 +292,7 @@ impl<'a> DataRaceDetector<'a> {
     }
 
     fn race_condition_specificity(operation_priorities: &[RaceOperationPriority]) -> usize {
-        operation_priorities
-            .iter()
-            .map(|priority| priority.0)
-            .sum()
+        operation_priorities.iter().map(|priority| priority.0).sum()
     }
 
     fn has_mixed_access_types(condition: &RaceCondition) -> bool {
@@ -423,8 +419,20 @@ type RaceOperationSignature = (String, String, usize, String);
 type StateAccessSignature = (usize, usize, String, String, usize, String, String);
 type RaceConditionKey = (String, Vec<RaceOperationSignature>);
 type RaceOperationPriority = (usize, String, String, usize, String);
-type RaceConditionPriority = (usize, usize, usize, Vec<RaceOperationPriority>, RaceConditionKey);
-type PairPriority = (usize, usize, usize, StateAccessSignature, StateAccessSignature);
+type RaceConditionPriority = (
+    usize,
+    usize,
+    usize,
+    Vec<RaceOperationPriority>,
+    RaceConditionKey,
+);
+type PairPriority = (
+    usize,
+    usize,
+    usize,
+    StateAccessSignature,
+    StateAccessSignature,
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum DataTypeCategory {
@@ -503,18 +511,30 @@ fn place_type_name(data_type: &str) -> &str {
 fn is_scalar_like_type(data_type: &str) -> bool {
     matches!(
         data_type,
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "f32" | "f64" | "bool" | "char"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "bool"
+            | "char"
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use unipn::analysis::pt::reachability::StateGraph;
     use crate::net::Net;
-    use unipn::pt::{PtPlace, PlaceType, PtTransition, TransitionType};
+    use unipn::analysis::pt::reachability::StateGraph;
+    use unipn::pt::{PlaceType, PtPlace, PtTransition, TransitionType};
 
     fn build_data_race_net() -> Net {
         let mut net = Net::empty();
@@ -605,18 +625,22 @@ mod tests {
 
         let race = &report.race_conditions[0];
         assert_eq!(race.operations.len(), 2);
-        assert!(race
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write" && op.location == "shared.rs:11:5"));
-        assert!(race
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "read" && op.location == "shared.rs:20:5"));
-        assert!(!race
-            .operations
-            .iter()
-            .any(|op| op.location == "shared.rs:10:5"));
+        assert!(
+            race.operations
+                .iter()
+                .any(|op| op.operation_type == "write" && op.location == "shared.rs:11:5")
+        );
+        assert!(
+            race.operations
+                .iter()
+                .any(|op| op.operation_type == "read" && op.location == "shared.rs:20:5")
+        );
+        assert!(
+            !race
+                .operations
+                .iter()
+                .any(|op| op.location == "shared.rs:10:5")
+        );
     }
 
     #[test]
@@ -640,11 +664,9 @@ mod tests {
             transition_name: "thread_a_read__2_in:shared.rs:11:5".into(),
         };
 
-        let representative = DataRaceDetector::select_site_representative(
-            &[&wrapper_read, &raw_read],
-            false,
-        )
-        .expect("expected a read representative");
+        let representative =
+            DataRaceDetector::select_site_representative(&[&wrapper_read, &raw_read], false)
+                .expect("expected a read representative");
 
         assert_eq!(representative.span, "shared.rs:11:5");
     }
@@ -790,10 +812,11 @@ mod tests {
         let race = &merged[0];
 
         assert_eq!(merged.len(), 1);
-        assert!(race
-            .operations
-            .iter()
-            .all(|operation| operation.operation_type == "write"));
+        assert!(
+            race.operations
+                .iter()
+                .all(|operation| operation.operation_type == "write")
+        );
     }
 
     #[test]
@@ -851,14 +874,18 @@ mod tests {
 
         assert!(report.has_race, "Expected merged unsafe access race");
         assert_eq!(report.race_count, 1);
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write" && op.location == "a.rs:10:5"));
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "read" && op.location == "b.rs:20:5"));
+        assert!(
+            report.race_conditions[0]
+                .operations
+                .iter()
+                .any(|op| op.operation_type == "write" && op.location == "a.rs:10:5")
+        );
+        assert!(
+            report.race_conditions[0]
+                .operations
+                .iter()
+                .any(|op| op.operation_type == "read" && op.location == "b.rs:20:5")
+        );
     }
 
     #[test]
@@ -914,9 +941,11 @@ mod tests {
 
         assert!(report.has_race);
         // The merged transition must surface the write, not just the read.
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write"));
+        assert!(
+            report.race_conditions[0]
+                .operations
+                .iter()
+                .any(|op| op.operation_type == "write")
+        );
     }
 }

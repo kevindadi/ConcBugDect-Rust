@@ -3,9 +3,10 @@
 use super::BodyToPetriNet;
 use crate::{
     memory::pointsto::AliasId,
-    net::{Idx, Transition, TransitionId, TransitionType},
     translate::callgraph::{ThreadControlKind, classify_thread_control},
 };
+use unipn::pt::{PtTransition, TransitionType};
+use unipn::TransitionId;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Local, Operand};
 use rustc_span::Spanned;

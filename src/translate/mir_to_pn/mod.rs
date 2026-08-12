@@ -14,9 +14,10 @@ use crate::{
     concurrency::blocking::LockGuardMap,
     memory::alias_engine::AliasEngine,
     memory::pointsto::AliasId,
-    net::{Net, PlaceId, TransitionId, structure::UnsafeOp},
     translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry},
 };
+use unipn::pt::{PtBuilder, UnsafeOp};
+use unipn::{PlaceId, TransitionId};
 use bb_graph::{BasicBlockGraph, SegState};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;

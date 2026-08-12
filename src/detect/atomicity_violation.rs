@@ -7,10 +7,8 @@
 //! matches load/store kinds and thread/alias identity.
 
 use unipn::analysis::pt::reachability::StateGraph;
-use crate::concurrency::atomic::AtomicOrdering;
-use crate::memory::pointsto::AliasId;
+use unipn::pt::{AliasId, AtomicOrdering, TransitionType};
 use unipn::TransitionId;
-use unipn::pt::TransitionType;
 use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
 use petgraph::Direction;
 use petgraph::graph::NodeIndex;

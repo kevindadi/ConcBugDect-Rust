@@ -6,9 +6,9 @@ use super::BodyToPetriNet;
 use crate::{
     concurrency::blocking::{LockGuardId, LockGuardTy},
     memory::pointsto::AliasId,
-    net::{Idx, Transition, TransitionType, structure::UnsafeOp},
     translate::mir_utils::rvalue_read_places,
 };
+use unipn::pt::{PtTransition, TransitionType, UnsafeOp};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::{BasicBlock, BasicBlockData, Rvalue};
 
