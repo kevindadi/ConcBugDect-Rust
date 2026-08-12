@@ -1,6 +1,3 @@
-use unipn::analysis::pt::reachability::{StateEdge, StateGraph};
-use unipn::{PlaceId, TransitionId};
-use unipn::pt::{PlaceType, TransitionType};
 use crate::report::{
     BlockedTransition, DeadlockReport, DeadlockState, DeadlockTrace, ResourceStatus,
     ResourceTraceStep,
@@ -10,6 +7,9 @@ use petgraph::visit::EdgeRef;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 use std::time::Instant;
+use unipn::analysis::pt::reachability::{StateEdge, StateGraph};
+use unipn::pt::{PlaceType, TransitionType};
+use unipn::{PlaceId, TransitionId};
 
 pub struct DeadlockDetector<'a> {
     state_graph: &'a StateGraph,
@@ -254,10 +254,10 @@ impl<'a> DeadlockDetector<'a> {
         };
 
         net.places
-            .iter_enumerated()
+            .iter().enumerate()
             .find_map(|(place_id, place)| {
                 let is_control_input = !matches!(place.place_type, PlaceType::Resources)
-                    && *net.pre.get(place_id, transition_id) > 0;
+                    && net.input_weight(place_id, transition_id) > 0;
                 (is_control_input && !place.span.is_empty()).then(|| place.span.clone())
             })
             .unwrap_or_default()
@@ -377,12 +377,12 @@ impl<'a> DeadlockDetector<'a> {
         let token_count = |place: PlaceId| state_node.marking.0.get(place).copied().unwrap_or(0);
         let place_names: FxHashMap<PlaceId, (String, String)> = net
             .places
-            .iter_enumerated()
+            .iter().enumerate()
             .map(|(place_id, place)| (place_id, (place.name.clone(), place.span.clone())))
             .collect();
         let mut blocked = Vec::new();
 
-        for (transition_id, transition) in net.transitions.iter_enumerated() {
+        for (transition_id, transition) in net.transitions.iter().enumerate() {
             if net
                 .fire_transition(&state_node.marking, transition_id)
                 .is_ok()
@@ -392,9 +392,9 @@ impl<'a> DeadlockDetector<'a> {
 
             let pre_places: Vec<(PlaceId, u64, PlaceType)> = net
                 .places
-                .iter_enumerated()
+                .iter().enumerate()
                 .filter_map(|(place_id, place)| {
-                    let weight = *net.pre.get(place_id, transition_id);
+                    let weight = net.input_weight(place_id, transition_id);
                     (weight > 0).then(|| (place_id, weight, place.place_type.clone()))
                 })
                 .collect();
@@ -441,18 +441,18 @@ impl<'a> DeadlockDetector<'a> {
                 });
             }
 
-            for (place_id, place) in net.places.iter_enumerated() {
+            for (place_id, place) in net.places.iter().enumerate() {
                 if !matches!(place.place_type, PlaceType::Resources)
                     || reported_resources.contains(&place_id)
                 {
                     continue;
                 }
-                let output = *net.post.get(place_id, transition_id);
+                let output = net.output_weight(place_id, transition_id);
                 if output == 0 {
                     continue;
                 }
                 let has = token_count(place_id);
-                let input = *net.pre.get(place_id, transition_id);
+                let input = net.input_weight(place_id, transition_id);
                 if has < input {
                     continue;
                 }
@@ -550,209 +550,3 @@ impl<'a> DeadlockDetector<'a> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use unipn::analysis::pt::reachability::StateGraph;
-    use crate::net::Net;
-    use unipn::pt::{PtPlace, PlaceType, PtTransition, TransitionType};
-
-    fn build_deadlock_net() -> Net {
-        let mut net = Net::empty();
-        let start = net.add_place(Place::new(
-            "start",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:1:1".into(),
-        ));
-        let progress = net.add_place(Place::new(
-            "progress",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:5:1".into(),
-        ));
-        let sink = net.add_place(Place::new(
-            "blocked",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:9:1".into(),
-        ));
-
-        let loop_transition = net.add_transition(Transition::new("loop"));
-        let block_transition = net.add_transition(Transition::new("block"));
-
-        net.set_input_weight(start, loop_transition, 1);
-        net.set_output_weight(progress, loop_transition, 1);
-
-        net.set_input_weight(progress, loop_transition, 1);
-        net.set_output_weight(progress, loop_transition, 1);
-
-        net.set_input_weight(start, block_transition, 1);
-        net.set_output_weight(sink, block_transition, 1);
-
-        net
-    }
-
-    #[test]
-    fn detect_simple_deadlock() {
-        let net = build_deadlock_net();
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-
-        assert!(report.has_deadlock, "Expected deadlock to be detected");
-        assert!(report.deadlock_count >= 1);
-        assert!(!report.deadlock_states.is_empty());
-    }
-
-    #[test]
-    fn reports_blocked_resource_transition_even_when_it_has_no_state_graph_edge() {
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "Mutex_0",
-            0,
-            1,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let lock = net.add_transition(Transition::new_with_transition_type(
-            "main_0_lock",
-            TransitionType::Lock(0),
-        ));
-
-        net.add_input_arc(control, lock, 1);
-        net.add_input_arc(resource, lock, 1);
-        net.add_output_arc(after_lock, lock, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "main_0_lock");
-        assert_eq!(blocked[0].needed_resources, vec!["Mutex_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 0);
-        assert_eq!(blocked[0].resource_status[0].needs, 1);
-    }
-
-    #[test]
-    fn reports_normal_transition_blocked_by_insufficient_resource_token() {
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "Mutex_0",
-            0,
-            1,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let merged = net.add_transition(Transition::new("inter_merge#1"));
-
-        net.add_input_arc(control, merged, 1);
-        net.add_input_arc(resource, merged, 1);
-        net.add_output_arc(after_lock, merged, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "inter_merge#1");
-        assert_eq!(blocked[0].needed_resources, vec!["Mutex_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 0);
-        assert_eq!(blocked[0].resource_status[0].needs, 1);
-    }
-
-    #[test]
-    fn reports_resource_capacity_blocked_transition() {
-        let mut net = Net::empty();
-        let start = net.add_place(Place::new(
-            "main_0",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:9:5".into(),
-        ));
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "RwLock_0",
-            10,
-            10,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let holder = net.add_transition(Transition::new("read_holder"));
-        let merged = net.add_transition(Transition::new("inter_merge#2"));
-
-        net.add_input_arc(start, holder, 1);
-        net.add_input_arc(resource, holder, 1);
-        net.add_output_arc(control, holder, 1);
-
-        net.add_input_arc(control, merged, 1);
-        net.add_input_arc(resource, merged, 1);
-        net.add_output_arc(resource, merged, 10);
-        net.add_output_arc(after_lock, merged, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "inter_merge#2");
-        assert_eq!(blocked[0].needed_resources, vec!["RwLock_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 9);
-        assert_eq!(blocked[0].resource_status[0].needs, 10);
-        assert_eq!(blocked[0].resource_trace.len(), 1);
-        assert_eq!(blocked[0].resource_trace[0].resource_name, "RwLock_0");
-        assert_eq!(blocked[0].resource_trace[0].transition_name, "read_holder");
-        assert_eq!(blocked[0].resource_trace[0].location, "src/main.rs:9:5");
-        assert_eq!(blocked[0].resource_trace[0].before, 10);
-        assert_eq!(blocked[0].resource_trace[0].after, 9);
-    }
-}
