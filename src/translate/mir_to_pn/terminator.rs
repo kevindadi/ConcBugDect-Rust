@@ -138,7 +138,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             .map(|(_, end)| *end)
             .expect("return place missing");
 
-        if self.return_transition.raw() == 0 {
+        if self.return_transition.index() == 0 {
             let bb_term_name = crate::transition_name!(name, bb_idx, "return");
             let bb_term_transition = PtTransition::new_with_transition_type(
                 bb_term_name,

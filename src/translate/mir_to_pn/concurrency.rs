@@ -114,7 +114,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
         let name = format!("seg_t{}_s{}", tid, seg);
         let tokens = if seg == 0 { 1 } else { 0 };
-        let place = PtPlace::new(name, tokens, u64::MAX, PlaceType::BasicBlock, String::new());
+        let place = PtPlace::new(name, tokens, usize::MAX, PlaceType::BasicBlock, String::new());
         let place_id = self.net.add_place(place);
         self.seg.seg_place_of.insert((tid, seg), place_id);
         place_id
@@ -128,7 +128,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         let place = PtPlace::new(
             "SeqCst_Global",
             1,
-            u64::MAX,
+            usize::MAX,
             PlaceType::Resources,
             String::new(),
         );

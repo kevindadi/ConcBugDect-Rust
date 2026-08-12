@@ -1,5 +1,5 @@
 use crate::report::{RaceCondition, RaceOperation, RaceReport};
-use petgraph::graph::NodeIndex;
+type NodeIndex = usize;
 use std::time::Instant;
 use unipn::analysis::pt::reachability::StateGraph;
 use unipn::pt::TransitionType;
@@ -20,7 +20,7 @@ impl<'a> DataRaceDetector<'a> {
         let mut report = RaceReport::new("State Graph Data Race Detector".to_string());
         let mut race_infos = Vec::new();
 
-        for state in self.state_graph.graph.node_indices() {
+        for state in self.state_graph.node_indices() {
             let transitions = self.collect_state_accesses(state);
             if transitions.len() < 2 {
                 continue;
@@ -355,8 +355,8 @@ impl<'a> DataRaceDetector<'a> {
     fn collect_state_accesses(&self, state: NodeIndex) -> Vec<StateAccess> {
         let mut accesses = Vec::new();
 
-        for edge in self.state_graph.graph.edges(state) {
-            match &edge.weight().transition.transition_type {
+        for edge in self.state_graph.edges(state) {
+            match &edge.weight().transition.kind.transition_type {
                 TransitionType::UnsafeRead(alias_id, span, basic_block, place_ty) => {
                     accesses.push(StateAccess {
                         location_id: *alias_id,

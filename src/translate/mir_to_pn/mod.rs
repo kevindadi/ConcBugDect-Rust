@@ -141,7 +141,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             exclude_bb: FxHashSet::default(),
             back_edges: FxHashSet::default(),
             break_cfg_cycles,
-            return_transition: TransitionId::new(0),
+            return_transition: TransitionId(0),
             entry_exit,
             key_api_regex,
             alias_unknown_policy,

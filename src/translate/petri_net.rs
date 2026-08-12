@@ -67,8 +67,8 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
     fn create_resource_place(
         &mut self,
         name: String,
-        initial: u64,
-        capacity: u64,
+        initial: usize,
+        capacity: usize,
         span: String,
     ) -> PlaceId {
         let place = PtPlace::new(name, initial, capacity, PlaceType::Resources, span);
@@ -90,7 +90,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             functions: FunctionRegistry::new(),
             lock_info: Arc::new(FxHashMap::default()),
             resources: ResourceRegistry::new(),
-            entry_exit: (PlaceId::new(0), PlaceId::new(0)),
+            entry_exit: (PlaceId(0), PlaceId(0)),
         }
     }
 

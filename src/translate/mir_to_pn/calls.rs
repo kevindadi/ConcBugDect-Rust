@@ -9,11 +9,11 @@ use crate::{
     memory::pointsto::AliasId,
     util::has_pn_attribute,
 };
-use unipn::pt::TransitionType;
-use unipn::{PlaceId, TransitionId};
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Operand};
 use rustc_span::Spanned;
+use unipn::pt::TransitionType;
+use unipn::{PlaceId, TransitionId};
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
     fn lock_node_for_guard(&self, guard_id: LockGuardId) -> Option<PlaceId> {
@@ -85,7 +85,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         &mut self,
         bb_end: TransitionId,
         lock_node: &PlaceId,
-        weight: u64,
+        weight: usize,
     ) {
         self.net.add_input_arc(*lock_node, bb_end, weight);
     }

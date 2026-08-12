@@ -10,9 +10,9 @@ use unipn::analysis::pt::reachability::StateGraph;
 use unipn::pt::{AliasId, AtomicOrdering, TransitionType};
 use unipn::TransitionId;
 use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
-use petgraph::Direction;
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
+// petgraph removed
+type NodeIndex = usize;
+// EdgeRef replaced by unipn StateGraph accessors
 use rustc_data_structures::fx::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -233,7 +233,7 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
             next_frame.node = edge.target();
             next_frame.trace.push(transition.id);
 
-            let event = parse_event(&transition.transition_type);
+            let event = parse_event(&transition.kind.transition_type);
             next_frame.events.push(event.clone());
 
             if let Some(event) = &event {
