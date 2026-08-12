@@ -406,10 +406,10 @@ impl<'a> DataRaceDetector<'a> {
         node.marking
             .iter()
             .filter_map(|(place_id, tokens)| {
-                if *tokens == 0 {
+                if tokens == 0 {
                     return None;
                 }
-                Some((place_id.index(), (*tokens).min(u8::MAX as usize) as u8))
+                Some((place_id.index(), tokens.min(u8::MAX as usize) as u8))
             })
             .collect()
     }

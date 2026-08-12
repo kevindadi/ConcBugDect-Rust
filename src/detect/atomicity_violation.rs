@@ -12,7 +12,6 @@ use unipn::analysis::pt::reachability::StateGraph;
 use unipn::pt::{AliasId, AtomicOrdering, TransitionType};
 // petgraph removed
 type NodeIndex = usize;
-use petgraph::Direction;
 // EdgeRef replaced by unipn StateGraph accessors
 use rustc_data_structures::fx::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
@@ -218,9 +217,7 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
             continue;
         }
 
-        let mut edges: Vec<_> = graph
-            .edges_directed(frame.node, Direction::Outgoing)
-            .collect();
+        let mut edges: Vec<_> = state_graph.edges(frame.node).collect();
         edges.sort_by_key(|edge| edge.weight().transition.id.index());
 
         for edge in edges {

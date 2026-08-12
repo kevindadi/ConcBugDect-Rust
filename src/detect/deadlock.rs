@@ -481,7 +481,7 @@ impl<'a> DeadlockDetector<'a> {
                 .find(|(place_id, _)| token_count(*place_id) > 0)
                 .and_then(|(place_id, _)| place_names.get(place_id).map(|(_, span)| span.clone()))
                 .unwrap_or_default();
-            let operation = Self::operation_label(&transition.transition_type).to_string();
+            let operation = Self::operation_label(&transition.kind.transition_type).to_string();
             let needed_resources = resource_status
                 .iter()
                 .map(|status| status.resource_name.clone())
@@ -508,7 +508,7 @@ impl<'a> DeadlockDetector<'a> {
             .marking
             .iter()
             .filter_map(|(place_id, tokens)| {
-                if *tokens == 0 {
+                if tokens == 0 {
                     return None;
                 }
                 let description = state
@@ -517,7 +517,7 @@ impl<'a> DeadlockDetector<'a> {
                     .find(|p| p.place == place_id)
                     .map(|p| format!("{} ({})", p.name, p.span))
                     .unwrap_or_else(|| format!("place#{}", place_id.index()));
-                Some((description, (*tokens).min(u8::MAX as usize) as u8))
+                Some((description, tokens.min(u8::MAX as usize) as u8))
             })
             .collect();
 
