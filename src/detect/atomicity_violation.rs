@@ -6,12 +6,13 @@
 //! the ordering-segment places in the net, so the witness search itself only
 //! matches load/store kinds and thread/alias identity.
 
+use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
+use unipn::TransitionId;
 use unipn::analysis::pt::reachability::StateGraph;
 use unipn::pt::{AliasId, AtomicOrdering, TransitionType};
-use unipn::TransitionId;
-use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
 // petgraph removed
 type NodeIndex = usize;
+use petgraph::Direction;
 // EdgeRef replaced by unipn StateGraph accessors
 use rustc_data_structures::fx::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
@@ -118,8 +119,8 @@ struct AliasKey {
 impl AliasKey {
     fn new(alias: AliasId) -> Self {
         Self {
-            instance: alias.instance_id.index(),
-            local: alias.local.index(),
+            instance: alias.instance_id,
+            local: alias.local,
         }
     }
 }
@@ -201,7 +202,6 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
         return Vec::new();
     }
 
-    let graph = &state_graph.graph;
     let mut witnesses = Vec::new();
     let mut seen: BTreeSet<(usize, TransitionId, TransitionId, TransitionId)> = BTreeSet::new();
     let mut visited: FxHashSet<StateFingerprint> = FxHashSet::default();
@@ -233,7 +233,7 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
             next_frame.node = edge.target();
             next_frame.trace.push(transition.id);
 
-            let event = parse_event(&transition.kind.transition_type);
+            let event = parse_event(&transition.transition_type);
             next_frame.events.push(event.clone());
 
             if let Some(event) = &event {
@@ -410,4 +410,3 @@ fn dedupe_patterns(witnesses: &[Witness]) -> Vec<ViolationPattern> {
 
     patterns
 }
-

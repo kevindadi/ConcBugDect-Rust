@@ -356,7 +356,7 @@ impl<'a> DataRaceDetector<'a> {
         let mut accesses = Vec::new();
 
         for edge in self.state_graph.edges(state) {
-            match &edge.weight().transition.kind.transition_type {
+            match &edge.weight().transition.transition_type {
                 TransitionType::UnsafeRead(alias_id, span, basic_block, place_ty) => {
                     accesses.push(StateAccess {
                         location_id: *alias_id,
@@ -409,7 +409,7 @@ impl<'a> DataRaceDetector<'a> {
                 if *tokens == 0 {
                     return None;
                 }
-                Some((place_id.index(), (*tokens).min(u8::MAX as u64) as u8))
+                Some((place_id.index(), (*tokens).min(u8::MAX as usize) as u8))
             })
             .collect()
     }

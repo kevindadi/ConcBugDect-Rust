@@ -187,9 +187,7 @@ impl<'a> DeadlockDetector<'a> {
         }
 
         let is_stable = cycle.iter().all(|&node| {
-            self.state_graph
-                .graph
-                .edges(node)
+            self.state_graph.edges(node)
                 .all(|edge| cycle.contains(&edge.target()))
         });
 
@@ -208,7 +206,7 @@ impl<'a> DeadlockDetector<'a> {
         let mut lock_transitions: FxHashMap<usize, Vec<TransitionId>> = FxHashMap::default();
 
         for edge in self.state_graph.edge_weights() {
-            match &edge.transition.kind.transition_type {
+            match &edge.transition.transition_type {
                 TransitionType::Lock(lock_id)
                 | TransitionType::RwLockWrite(lock_id)
                 | TransitionType::RwLockRead(lock_id) => {
@@ -258,8 +256,7 @@ impl<'a> DeadlockDetector<'a> {
             None => return String::new(),
         };
 
-        net.places
-            .iter().enumerate()
+        net.places_enumerated()
             .find_map(|(place_id, place)| {
                 let is_control_input = !matches!(place.kind.place_type, PlaceType::Resources)
                     && net.input_weight(place_id, transition_id) > 0;
@@ -323,7 +320,7 @@ impl<'a> DeadlockDetector<'a> {
             None => return Vec::new(),
         };
         let state_node = self.state_graph.node(state);
-        let mut remaining: FxHashMap<PlaceId, u64> = resources
+        let mut remaining: FxHashMap<PlaceId, usize> = resources
             .iter()
             .filter_map(|place_id| {
                 let initial = self.initial_marking().tokens(*place_id);
@@ -348,7 +345,7 @@ impl<'a> DeadlockDetector<'a> {
                 trace.push(ResourceTraceStep {
                     resource_name,
                     transition_name: edge.transition.name.clone(),
-                    operation: Self::operation_label(&edge.transition.kind.transition_type).to_string(),
+                    operation: Self::operation_label(&edge.transition.transition_type).to_string(),
                     location: self.transition_location(edge.transition.id),
                     from_state: format!("s{}", self.state_graph.node(source).index),
                     to_state: format!("s{}", self.state_graph.node(target).index),
@@ -379,15 +376,13 @@ impl<'a> DeadlockDetector<'a> {
             Some(net) => net,
             None => return Vec::new(),
         };
-        let token_count = |place: PlaceId| state_node.marking.0.get(place).copied().unwrap_or(0);
-        let place_names: FxHashMap<PlaceId, (String, String)> = net
-            .places
-            .iter().enumerate()
+        let token_count = |place: PlaceId| state_node.marking.0.get(place.index()).copied().unwrap_or(0);
+        let place_names: FxHashMap<PlaceId, (String, String)> = net.places_enumerated()
             .map(|(place_id, place)| (place_id, (place.name.clone(), place.kind.span.clone())))
             .collect();
         let mut blocked = Vec::new();
 
-        for (transition_id, transition) in net.transitions.iter().enumerate() {
+        for (transition_id, transition) in net.transitions_enumerated() {
             if net
                 .fire_transition(&state_node.marking, transition_id)
                 .is_ok()
@@ -395,9 +390,7 @@ impl<'a> DeadlockDetector<'a> {
                 continue;
             }
 
-            let pre_places: Vec<(PlaceId, u64, PlaceType)> = net
-                .places
-                .iter().enumerate()
+            let pre_places: Vec<(PlaceId, usize, PlaceType)> = net.places_enumerated()
                 .filter_map(|(place_id, place)| {
                     let weight = net.input_weight(place_id, transition_id);
                     (weight > 0).then(|| (place_id, weight, place.kind.place_type.clone()))
@@ -407,7 +400,7 @@ impl<'a> DeadlockDetector<'a> {
                 continue;
             }
 
-            let non_resource_places: Vec<(PlaceId, u64)> = pre_places
+            let non_resource_places: Vec<(PlaceId, usize)> = pre_places
                 .iter()
                 .filter_map(|(place_id, weight, place_type)| {
                     (!matches!(place_type, PlaceType::Resources)).then_some((*place_id, *weight))
@@ -446,7 +439,7 @@ impl<'a> DeadlockDetector<'a> {
                 });
             }
 
-            for (place_id, place) in net.places.iter().enumerate() {
+            for (place_id, place) in net.places_enumerated() {
                 if !matches!(place.kind.place_type, PlaceType::Resources)
                     || reported_resources.contains(&place_id)
                 {
@@ -488,7 +481,7 @@ impl<'a> DeadlockDetector<'a> {
                 .find(|(place_id, _)| token_count(*place_id) > 0)
                 .and_then(|(place_id, _)| place_names.get(place_id).map(|(_, span)| span.clone()))
                 .unwrap_or_default();
-            let operation = Self::operation_label(&transition.kind.transition_type).to_string();
+            let operation = Self::operation_label(&transition.transition_type).to_string();
             let needed_resources = resource_status
                 .iter()
                 .map(|status| status.resource_name.clone())
@@ -524,7 +517,7 @@ impl<'a> DeadlockDetector<'a> {
                     .find(|p| p.place == place_id)
                     .map(|p| format!("{} ({})", p.name, p.span))
                     .unwrap_or_else(|| format!("place#{}", place_id.index()));
-                Some((description, (*tokens).min(u8::MAX as u64) as u8))
+                Some((description, (*tokens).min(u8::MAX as usize) as u8))
             })
             .collect();
 
