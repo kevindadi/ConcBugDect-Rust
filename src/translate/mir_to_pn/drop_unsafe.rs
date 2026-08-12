@@ -6,9 +6,9 @@ use super::BodyToPetriNet;
 use crate::{
     concurrency::blocking::{LockGuardId, LockGuardTy},
     memory::pointsto::AliasId,
-    net::{Idx, Transition, TransitionType, structure::UnsafeOp},
     translate::mir_utils::rvalue_read_places,
 };
+use unipn::pt::{PtTransition, TransitionType, UnsafeOp};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::{BasicBlock, BasicBlockData, Rvalue};
 
@@ -23,7 +23,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
     ) {
         let bb_term_name = crate::transition_name!(name, bb_idx, "drop");
         let bb_term_transition =
-            Transition::new_with_transition_type(bb_term_name, TransitionType::Drop);
+            PtTransition::new_with_transition_type(bb_term_name, TransitionType::Drop);
         let bb_end = self.net.add_transition(bb_term_transition);
 
         self.net
@@ -49,7 +49,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                     }
                 }
 
-                if let Some(transition) = self.net.get_transition_mut(bb_end) {
+                if let Some(transition) = self.net.transition_mut(bb_end) {
                     transition.transition_type = TransitionType::Unlock(lock_node.index());
                 }
             }
@@ -152,7 +152,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
         let fn_name = crate::util::format_name(self.instance.def_id());
         let transition_name = format!("{}_unsafe_bb{}", fn_name, bb_idx.index());
-        let transition = Transition::new_with_transition_type(
+        let transition = PtTransition::new_with_transition_type(
             transition_name.clone(),
             TransitionType::UnsafeAccess(ops),
         );

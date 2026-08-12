@@ -4,8 +4,9 @@ use super::BodyToPetriNet;
 use crate::{
     concurrency::atomic::AtomicOrdering,
     memory::pointsto::AliasId,
-    net::{Place, PlaceId, Transition, TransitionId, TransitionType, structure::PlaceType},
 };
+use unipn::pt::{PlaceType, PtPlace, PtTransition, TransitionType};
+use unipn::{PlaceId, TransitionId};
 use rustc_middle::mir::BasicBlock;
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
@@ -83,7 +84,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             );
             let transition_type = transition_builder(&alias_id, &order, span_owned.clone());
             let transition =
-                Transition::new_with_transition_type(transition_name, transition_type);
+                PtTransition::new_with_transition_type(transition_name, transition_type);
             let transition_id = self.net.add_transition(transition);
 
             self.net.add_input_arc(intermediate_id, transition_id, 1);
@@ -113,7 +114,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
         let name = format!("seg_t{}_s{}", tid, seg);
         let tokens = if seg == 0 { 1 } else { 0 };
-        let place = Place::new(name, tokens, u64::MAX, PlaceType::BasicBlock, String::new());
+        let place = PtPlace::new(name, tokens, usize::MAX, PlaceType::BasicBlock, String::new());
         let place_id = self.net.add_place(place);
         self.seg.seg_place_of.insert((tid, seg), place_id);
         place_id
@@ -124,10 +125,10 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             return place_id;
         }
 
-        let place = Place::new(
+        let place = PtPlace::new(
             "SeqCst_Global",
             1,
-            u64::MAX,
+            usize::MAX,
             PlaceType::Resources,
             String::new(),
         );

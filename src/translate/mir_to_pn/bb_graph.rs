@@ -1,8 +1,8 @@
 //! `BasicBlockGraph` and `SegState`: CFG shape and atomic-order segment state.
 
-use crate::net::PlaceId;
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::BasicBlock;
+use unipn::PlaceId;
 
 #[derive(Default)]
 pub(super) struct BasicBlockGraph {

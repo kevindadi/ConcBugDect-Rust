@@ -3,13 +3,11 @@
 #![feature(rustc_private)]
 #![feature(box_patterns)]
 
-pub mod analysis;
 pub mod callback;
 pub mod concurrency;
 pub mod config;
 pub mod detect;
 pub mod memory;
-pub mod net;
 pub mod options;
 pub mod report;
 pub mod translate;

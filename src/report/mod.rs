@@ -425,9 +425,9 @@ pub struct ResourceStatus {
     /// Name of the resource (e.g., Mutex_0, RwLock_1)
     pub resource_name: String,
     /// Current tokens available for this resource
-    pub has: u64,
+    pub has: usize,
     /// Tokens required by the transition
-    pub needs: u64,
+    pub needs: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -438,8 +438,8 @@ pub struct ResourceTraceStep {
     pub location: String,
     pub from_state: String,
     pub to_state: String,
-    pub before: u64,
-    pub after: u64,
+    pub before: usize,
+    pub after: usize,
 }
 
 /// A resource-related transition that is blocked in a deadlock state.

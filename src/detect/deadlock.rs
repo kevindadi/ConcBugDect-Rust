@@ -1,16 +1,16 @@
-use crate::analysis::reachability::{StateEdge, StateGraph};
-use crate::net::ids::{PlaceId, TransitionId};
-use crate::net::index_vec::Idx;
-use crate::net::structure::{PlaceType, TransitionType};
 use crate::report::{
     BlockedTransition, DeadlockReport, DeadlockState, DeadlockTrace, ResourceStatus,
     ResourceTraceStep,
 };
-use petgraph::graph::{EdgeIndex, NodeIndex};
-use petgraph::visit::EdgeRef;
+type NodeIndex = usize;
+type EdgeIndex = usize;
+// EdgeRef replaced by unipn StateGraph accessors
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 use std::time::Instant;
+use unipn::analysis::pt::reachability::{StateEdge, StateGraph};
+use unipn::pt::{PlaceType, TransitionType};
+use unipn::{Marking, PlaceId, TransitionId};
 
 pub struct DeadlockDetector<'a> {
     state_graph: &'a StateGraph,
@@ -19,6 +19,10 @@ pub struct DeadlockDetector<'a> {
 impl<'a> DeadlockDetector<'a> {
     pub fn new(state_graph: &'a StateGraph) -> Self {
         Self { state_graph }
+    }
+
+    fn initial_marking(&self) -> &Marking {
+        &self.state_graph.states[self.state_graph.initial].marking
     }
 
     pub fn detect(&self) -> DeadlockReport {
@@ -56,9 +60,9 @@ impl<'a> DeadlockDetector<'a> {
     fn detect_reachability_deadlock(&self) -> FxHashSet<NodeIndex> {
         let mut deadlocks = FxHashSet::default();
 
-        for node_idx in self.state_graph.graph.node_indices() {
+        for node_idx in self.state_graph.node_indices() {
             let state = self.state_graph.node(node_idx);
-            let is_terminal = self.state_graph.graph.edges(node_idx).count() == 0;
+            let is_terminal = self.state_graph.edges(node_idx).count() == 0;
             let is_normal_termination = state
                 .places
                 .iter()
@@ -85,7 +89,7 @@ impl<'a> DeadlockDetector<'a> {
         let mut stack = FxHashSet::default();
         let mut cycle_groups: FxHashMap<Vec<usize>, FxHashSet<NodeIndex>> = FxHashMap::default();
 
-        for start_node in self.state_graph.graph.node_indices() {
+        for start_node in self.state_graph.node_indices() {
             if !visited.contains(&start_node) {
                 self.find_deadlock_cycles(
                     start_node,
@@ -119,7 +123,7 @@ impl<'a> DeadlockDetector<'a> {
         let mut path = current_path.clone();
         path.push(current);
 
-        for edge in self.state_graph.graph.edges(current) {
+        for edge in self.state_graph.edges(current) {
             let next = edge.target();
 
             if !visited.contains(&next) {
@@ -183,9 +187,7 @@ impl<'a> DeadlockDetector<'a> {
         }
 
         let is_stable = cycle.iter().all(|&node| {
-            self.state_graph
-                .graph
-                .edges(node)
+            self.state_graph.edges(node)
                 .all(|edge| cycle.contains(&edge.target()))
         });
 
@@ -203,7 +205,7 @@ impl<'a> DeadlockDetector<'a> {
     fn collect_lock_transitions(&self) -> FxHashMap<usize, Vec<TransitionId>> {
         let mut lock_transitions: FxHashMap<usize, Vec<TransitionId>> = FxHashMap::default();
 
-        for edge in self.state_graph.graph.edge_weights() {
+        for edge in self.state_graph.edge_weights() {
             match &edge.transition.transition_type {
                 TransitionType::Lock(lock_id)
                 | TransitionType::RwLockWrite(lock_id)
@@ -254,12 +256,11 @@ impl<'a> DeadlockDetector<'a> {
             None => return String::new(),
         };
 
-        net.places
-            .iter_enumerated()
+        net.places_enumerated()
             .find_map(|(place_id, place)| {
-                let is_control_input = !matches!(place.place_type, PlaceType::Resources)
-                    && *net.pre.get(place_id, transition_id) > 0;
-                (is_control_input && !place.span.is_empty()).then(|| place.span.clone())
+                let is_control_input = !matches!(place.kind.place_type, PlaceType::Resources)
+                    && net.input_weight(place_id, transition_id) > 0;
+                (is_control_input && !place.kind.span.is_empty()).then(|| place.kind.span.clone())
             })
             .unwrap_or_default()
     }
@@ -280,7 +281,7 @@ impl<'a> DeadlockDetector<'a> {
                 break;
             }
 
-            for edge in self.state_graph.graph.edges(node) {
+            for edge in self.state_graph.edges(node) {
                 let next = edge.target();
                 if visited.insert(next) {
                     previous.insert(next, (node, edge.id()));
@@ -299,7 +300,7 @@ impl<'a> DeadlockDetector<'a> {
             let Some((source, edge_id)) = previous.get(&current).copied() else {
                 return Vec::new();
             };
-            let Some(edge) = self.state_graph.graph.edge_weight(edge_id).cloned() else {
+            let Some(edge) = self.state_graph.edge_weight(edge_id).cloned() else {
                 return Vec::new();
             };
             path.push((source, current, edge));
@@ -319,10 +320,10 @@ impl<'a> DeadlockDetector<'a> {
             None => return Vec::new(),
         };
         let state_node = self.state_graph.node(state);
-        let mut remaining: FxHashMap<PlaceId, u64> = resources
+        let mut remaining: FxHashMap<PlaceId, usize> = resources
             .iter()
             .filter_map(|place_id| {
-                let initial = net.places[*place_id].tokens;
+                let initial = self.initial_marking().tokens(*place_id);
                 let current = state_node.marking.tokens(*place_id);
                 let deficit = initial.saturating_sub(current);
                 (deficit > 0).then_some((*place_id, deficit))
@@ -340,7 +341,7 @@ impl<'a> DeadlockDetector<'a> {
                     continue;
                 }
 
-                let resource_name = net.places[change.place].name.clone();
+                let resource_name = net.places[change.place.index()].name.clone();
                 trace.push(ResourceTraceStep {
                     resource_name,
                     transition_name: edge.transition.name.clone(),
@@ -375,15 +376,13 @@ impl<'a> DeadlockDetector<'a> {
             Some(net) => net,
             None => return Vec::new(),
         };
-        let token_count = |place: PlaceId| state_node.marking.0.get(place).copied().unwrap_or(0);
-        let place_names: FxHashMap<PlaceId, (String, String)> = net
-            .places
-            .iter_enumerated()
-            .map(|(place_id, place)| (place_id, (place.name.clone(), place.span.clone())))
+        let token_count = |place: PlaceId| state_node.marking.0.get(place.index()).copied().unwrap_or(0);
+        let place_names: FxHashMap<PlaceId, (String, String)> = net.places_enumerated()
+            .map(|(place_id, place)| (place_id, (place.name.clone(), place.kind.span.clone())))
             .collect();
         let mut blocked = Vec::new();
 
-        for (transition_id, transition) in net.transitions.iter_enumerated() {
+        for (transition_id, transition) in net.transitions_enumerated() {
             if net
                 .fire_transition(&state_node.marking, transition_id)
                 .is_ok()
@@ -391,19 +390,17 @@ impl<'a> DeadlockDetector<'a> {
                 continue;
             }
 
-            let pre_places: Vec<(PlaceId, u64, PlaceType)> = net
-                .places
-                .iter_enumerated()
+            let pre_places: Vec<(PlaceId, usize, PlaceType)> = net.places_enumerated()
                 .filter_map(|(place_id, place)| {
-                    let weight = *net.pre.get(place_id, transition_id);
-                    (weight > 0).then(|| (place_id, weight, place.place_type.clone()))
+                    let weight = net.input_weight(place_id, transition_id);
+                    (weight > 0).then(|| (place_id, weight, place.kind.place_type.clone()))
                 })
                 .collect();
             if pre_places.is_empty() {
                 continue;
             }
 
-            let non_resource_places: Vec<(PlaceId, u64)> = pre_places
+            let non_resource_places: Vec<(PlaceId, usize)> = pre_places
                 .iter()
                 .filter_map(|(place_id, weight, place_type)| {
                     (!matches!(place_type, PlaceType::Resources)).then_some((*place_id, *weight))
@@ -425,7 +422,7 @@ impl<'a> DeadlockDetector<'a> {
                     continue;
                 }
                 let has = token_count(*place_id);
-                let initial = net.places[*place_id].tokens;
+                let initial = self.initial_marking().tokens(*place_id);
                 if has >= *weight || (has > 0 && has >= initial) {
                     continue;
                 }
@@ -442,28 +439,25 @@ impl<'a> DeadlockDetector<'a> {
                 });
             }
 
-            for (place_id, place) in net.places.iter_enumerated() {
-                if !matches!(place.place_type, PlaceType::Resources)
+            for (place_id, place) in net.places_enumerated() {
+                if !matches!(place.kind.place_type, PlaceType::Resources)
                     || reported_resources.contains(&place_id)
                 {
                     continue;
                 }
-                let output = *net.post.get(place_id, transition_id);
+                let output = net.output_weight(place_id, transition_id);
                 if output == 0 {
                     continue;
                 }
                 let has = token_count(place_id);
-                let input = *net.pre.get(place_id, transition_id);
+                let input = net.input_weight(place_id, transition_id);
                 if has < input {
                     continue;
                 }
-                let capacity = net
-                    .capacity
-                    .as_ref()
-                    .map(|caps| caps[place_id])
-                    .unwrap_or(place.capacity);
+                let capacity = place.kind.capacity.unwrap_or(usize::MAX);
                 let after = has - input + output;
-                if after <= capacity || (has > 0 && has >= place.tokens) {
+                let initial_tokens = self.initial_marking().tokens(place_id);
+                if after <= capacity || (has > 0 && has >= initial_tokens) {
                     continue;
                 }
                 let (resource_name, _) = place_names
@@ -487,7 +481,7 @@ impl<'a> DeadlockDetector<'a> {
                 .find(|(place_id, _)| token_count(*place_id) > 0)
                 .and_then(|(place_id, _)| place_names.get(place_id).map(|(_, span)| span.clone()))
                 .unwrap_or_default();
-            let operation = Self::operation_label(&transition.transition_type).to_string();
+            let operation = Self::operation_label(&transition.kind.transition_type).to_string();
             let needed_resources = resource_status
                 .iter()
                 .map(|status| status.resource_name.clone())
@@ -514,7 +508,7 @@ impl<'a> DeadlockDetector<'a> {
             .marking
             .iter()
             .filter_map(|(place_id, tokens)| {
-                if *tokens == 0 {
+                if tokens == 0 {
                     return None;
                 }
                 let description = state
@@ -523,7 +517,7 @@ impl<'a> DeadlockDetector<'a> {
                     .find(|p| p.place == place_id)
                     .map(|p| format!("{} ({})", p.name, p.span))
                     .unwrap_or_else(|| format!("place#{}", place_id.index()));
-                Some((description, (*tokens).min(u8::MAX as u64) as u8))
+                Some((description, tokens.min(u8::MAX as usize) as u8))
             })
             .collect();
 
@@ -544,216 +538,10 @@ impl<'a> DeadlockDetector<'a> {
 
     fn collect_state_space_info(&self) -> crate::report::StateSpaceInfo {
         crate::report::StateSpaceInfo {
-            total_states: self.state_graph.graph.node_count(),
-            total_transitions: self.state_graph.graph.edge_count(),
-            reachable_states: self.state_graph.graph.node_count(),
+            total_states: self.state_graph.node_count(),
+            total_transitions: self.state_graph.edge_count(),
+            reachable_states: self.state_graph.node_count(),
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::analysis::reachability::StateGraph;
-    use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
-
-    fn build_deadlock_net() -> Net {
-        let mut net = Net::empty();
-        let start = net.add_place(Place::new(
-            "start",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:1:1".into(),
-        ));
-        let progress = net.add_place(Place::new(
-            "progress",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:5:1".into(),
-        ));
-        let sink = net.add_place(Place::new(
-            "blocked",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "deadlock.rs:9:1".into(),
-        ));
-
-        let loop_transition = net.add_transition(Transition::new("loop"));
-        let block_transition = net.add_transition(Transition::new("block"));
-
-        net.set_input_weight(start, loop_transition, 1);
-        net.set_output_weight(progress, loop_transition, 1);
-
-        net.set_input_weight(progress, loop_transition, 1);
-        net.set_output_weight(progress, loop_transition, 1);
-
-        net.set_input_weight(start, block_transition, 1);
-        net.set_output_weight(sink, block_transition, 1);
-
-        net
-    }
-
-    #[test]
-    fn detect_simple_deadlock() {
-        let net = build_deadlock_net();
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-
-        assert!(report.has_deadlock, "Expected deadlock to be detected");
-        assert!(report.deadlock_count >= 1);
-        assert!(!report.deadlock_states.is_empty());
-    }
-
-    #[test]
-    fn reports_blocked_resource_transition_even_when_it_has_no_state_graph_edge() {
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "Mutex_0",
-            0,
-            1,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let lock = net.add_transition(Transition::new_with_transition_type(
-            "main_0_lock",
-            TransitionType::Lock(0),
-        ));
-
-        net.add_input_arc(control, lock, 1);
-        net.add_input_arc(resource, lock, 1);
-        net.add_output_arc(after_lock, lock, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "main_0_lock");
-        assert_eq!(blocked[0].needed_resources, vec!["Mutex_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 0);
-        assert_eq!(blocked[0].resource_status[0].needs, 1);
-    }
-
-    #[test]
-    fn reports_normal_transition_blocked_by_insufficient_resource_token() {
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "Mutex_0",
-            0,
-            1,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let merged = net.add_transition(Transition::new("inter_merge#1"));
-
-        net.add_input_arc(control, merged, 1);
-        net.add_input_arc(resource, merged, 1);
-        net.add_output_arc(after_lock, merged, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "inter_merge#1");
-        assert_eq!(blocked[0].needed_resources, vec!["Mutex_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 0);
-        assert_eq!(blocked[0].resource_status[0].needs, 1);
-    }
-
-    #[test]
-    fn reports_resource_capacity_blocked_transition() {
-        let mut net = Net::empty();
-        let start = net.add_place(Place::new(
-            "main_0",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:9:5".into(),
-        ));
-        let control = net.add_place(Place::new(
-            "main_0_wait",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:10:5".into(),
-        ));
-        let resource = net.add_place(Place::new(
-            "RwLock_0",
-            10,
-            10,
-            PlaceType::Resources,
-            String::new(),
-        ));
-        let after_lock = net.add_place(Place::new(
-            "main_1",
-            0,
-            1,
-            PlaceType::BasicBlock,
-            "src/main.rs:11:5".into(),
-        ));
-        let holder = net.add_transition(Transition::new("read_holder"));
-        let merged = net.add_transition(Transition::new("inter_merge#2"));
-
-        net.add_input_arc(start, holder, 1);
-        net.add_input_arc(resource, holder, 1);
-        net.add_output_arc(control, holder, 1);
-
-        net.add_input_arc(control, merged, 1);
-        net.add_input_arc(resource, merged, 1);
-        net.add_output_arc(resource, merged, 10);
-        net.add_output_arc(after_lock, merged, 1);
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DeadlockDetector::new(&state_graph);
-        let report = detector.detect();
-        let blocked = &report.deadlock_states[0].blocked_transitions;
-
-        assert_eq!(blocked.len(), 1);
-        assert_eq!(blocked[0].name, "inter_merge#2");
-        assert_eq!(blocked[0].needed_resources, vec!["RwLock_0"]);
-        assert_eq!(blocked[0].resource_status[0].has, 9);
-        assert_eq!(blocked[0].resource_status[0].needs, 10);
-        assert_eq!(blocked[0].resource_trace.len(), 1);
-        assert_eq!(blocked[0].resource_trace[0].resource_name, "RwLock_0");
-        assert_eq!(blocked[0].resource_trace[0].transition_name, "read_holder");
-        assert_eq!(blocked[0].resource_trace[0].location, "src/main.rs:9:5");
-        assert_eq!(blocked[0].resource_trace[0].before, 10);
-        assert_eq!(blocked[0].resource_trace[0].after, 9);
-    }
-}

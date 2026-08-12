@@ -1,7 +1,8 @@
 //! Terminators: `init_basic_block`, `handle_start_block`, `handle_goto`, `handle_switch`, `handle_return`, …
 
 use super::BodyToPetriNet;
-use crate::net::{Transition, TransitionId, TransitionType};
+use unipn::pt::{PtTransition, TransitionType};
+use unipn::TransitionId;
 use rustc_hir::def_id::DefId;
 use rustc_middle::mir::{BasicBlock, Body, SwitchTargets};
 
@@ -24,7 +25,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
     pub(super) fn handle_start_block(&mut self, name: &str, bb_idx: BasicBlock, def_id: DefId) {
         let bb_start_name = format!("{}_{}_start", name, bb_idx.index());
-        let bb_start_transition = Transition::new_with_transition_type(
+        let bb_start_transition = PtTransition::new_with_transition_type(
             bb_start_name,
             TransitionType::Start(self.instance_id.index()),
         );
@@ -120,7 +121,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             let bb_term_name = crate::transition_name!(name, bb_idx, "switch", t_num.to_string());
             t_num += 1;
             let bb_term_transition =
-                Transition::new_with_transition_type(bb_term_name, TransitionType::Switch);
+                PtTransition::new_with_transition_type(bb_term_name, TransitionType::Switch);
             let bb_end = self.net.add_transition(bb_term_transition);
 
             self.net
@@ -137,9 +138,9 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             .map(|(_, end)| *end)
             .expect("return place missing");
 
-        if self.return_transition.raw() == 0 {
+        if self.return_transition.index() == 0 {
             let bb_term_name = crate::transition_name!(name, bb_idx, "return");
-            let bb_term_transition = Transition::new_with_transition_type(
+            let bb_term_transition = PtTransition::new_with_transition_type(
                 bb_term_name,
                 TransitionType::Return(self.instance_id.index()),
             );
@@ -159,7 +160,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         bb_idx: BasicBlock,
         bb_term_name: &str,
     ) -> TransitionId {
-        let bb_term_transition = Transition::new_with_transition_type(
+        let bb_term_transition = PtTransition::new_with_transition_type(
             bb_term_name.to_string(),
             TransitionType::Function,
         );

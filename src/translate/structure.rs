@@ -4,12 +4,13 @@ use rustc_hir::def_id::DefId;
 
 use crate::concurrency::atomic::AtomicOrdering;
 use crate::config::PnConfig;
-use crate::{memory::pointsto::AliasId, net::PlaceId};
+use crate::memory::pointsto::AliasId;
+use unipn::PlaceId;
 
 /// Token capacity of an `RwLock` resource place. A read lock consumes one
 /// token (so up to `RWLOCK_CAPACITY` concurrent readers); a write lock is
 /// exclusive and must consume *all* tokens.
-pub const RWLOCK_CAPACITY: u64 = 10;
+pub const RWLOCK_CAPACITY: usize = 10;
 
 pub struct ResourceRegistry {
     locks: FxHashMap<AliasId, PlaceId>,
@@ -160,6 +161,29 @@ impl KeyApiRegex {
             channel_recv: make_regex(&config.channel_recv),
             atomic_load: make_regex(&config.atomic_load),
             atomic_store: make_regex(&config.atomic_store),
+        }
+    }
+}
+
+impl From<AliasId> for unipn::pt::AliasId {
+    fn from(a: AliasId) -> Self {
+        unipn::pt::AliasId {
+            instance_id: a.instance_id.index(),
+            local: a.local.as_usize(),
+            array_index: a.array_index,
+            field: a.field,
+        }
+    }
+}
+
+impl From<AtomicOrdering> for unipn::pt::AtomicOrdering {
+    fn from(o: AtomicOrdering) -> Self {
+        match o {
+            AtomicOrdering::Relaxed => unipn::pt::AtomicOrdering::Relaxed,
+            AtomicOrdering::Release => unipn::pt::AtomicOrdering::Release,
+            AtomicOrdering::Acquire => unipn::pt::AtomicOrdering::Acquire,
+            AtomicOrdering::AcqRel => unipn::pt::AtomicOrdering::AcqRel,
+            AtomicOrdering::SeqCst => unipn::pt::AtomicOrdering::SeqCst,
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::concurrency::blocking::BlockingCollector;
 use crate::concurrency::channel::{ChannelCollector, ChannelInfo, EndpointType};
 use crate::memory::pointsto::AliasId;
 use crate::memory::unsafe_memory::UnsafeAnalyzer;
-use crate::net::structure::PlaceType;
+use unipn::pt::PlaceType;
 use crate::translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry};
 use crate::util::format_name;
 use petgraph::graph::NodeIndex;
@@ -19,7 +19,8 @@ use std::time::Instant;
 use super::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::concurrency::blocking::{LockGuardId, LockGuardMap, LockGuardTy};
 use crate::memory::alias_engine::AliasEngine;
-use crate::net::{Net, Place, PlaceId};
+use unipn::pt::{PtBuilder, PtPlace};
+use unipn::PlaceId;
 use crate::translate::mir_to_pn::BodyToPetriNet;
 
 fn find(union_find: &FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId) -> LockGuardId {
@@ -41,7 +42,7 @@ fn union(union_find: &mut FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId, 
 pub struct PetriNet<'analysis, 'tcx> {
     options: Options,
     tcx: rustc_middle::ty::TyCtxt<'tcx>,
-    pub net: Net,
+    pub net: PtBuilder,
     callgraph: &'analysis CallGraph<'tcx>,
     pub alias: RefCell<AliasEngine<'analysis, 'tcx>>,
     functions: FunctionRegistry,
@@ -66,11 +67,11 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
     fn create_resource_place(
         &mut self,
         name: String,
-        initial: u64,
-        capacity: u64,
+        initial: usize,
+        capacity: usize,
         span: String,
     ) -> PlaceId {
-        let place = Place::new(name, initial, capacity, PlaceType::Resources, span);
+        let place = PtPlace::new(name, initial, capacity, PlaceType::Resources, span);
         self.net.add_place(place)
     }
 
@@ -83,13 +84,13 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         Self {
             options,
             tcx,
-            net: Net::empty(),
+            net: PtBuilder::empty(),
             callgraph,
             alias,
             functions: FunctionRegistry::new(),
             lock_info: Arc::new(FxHashMap::default()),
             resources: ResourceRegistry::new(),
-            entry_exit: (PlaceId::new(0), PlaceId::new(0)),
+            entry_exit: (PlaceId(0), PlaceId(0)),
         }
     }
 
@@ -498,7 +499,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         with_token: bool,
     ) -> (PlaceId, PlaceId) {
         let start = if with_token {
-            Place::new(
+            PtPlace::new(
                 format!("{}_start", func_name),
                 1,
                 1,
@@ -506,7 +507,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             )
         } else {
-            Place::new(
+            PtPlace::new(
                 format!("{}_start", func_name),
                 0,
                 1,
@@ -514,7 +515,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             )
         };
-        let end = Place::new(
+        let end = PtPlace::new(
             format!("{}_end", func_name),
             0,
             1,
@@ -675,7 +676,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
     pub fn get_or_insert_node(&mut self, def_id: DefId) -> (PlaceId, PlaceId) {
         self.functions.get_or_insert(def_id, || {
             let func_name = self.tcx.def_path_str(def_id);
-            let func_start = Place::new(
+            let func_start = PtPlace::new(
                 format!("{}_start", func_name),
                 0,
                 1,
@@ -683,7 +684,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 String::default(),
             );
             let func_start_node_id = self.net.add_place(func_start);
-            let func_end = Place::new(
+            let func_end = PtPlace::new(
                 format!("{}_end", func_name),
                 0,
                 1,

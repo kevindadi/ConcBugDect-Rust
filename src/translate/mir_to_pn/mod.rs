@@ -14,9 +14,10 @@ use crate::{
     concurrency::blocking::LockGuardMap,
     memory::alias_engine::AliasEngine,
     memory::pointsto::AliasId,
-    net::{Net, PlaceId, TransitionId, structure::UnsafeOp},
     translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry},
 };
+use unipn::pt::{PtBuilder, UnsafeOp};
+use unipn::{PlaceId, TransitionId};
 use bb_graph::{BasicBlockGraph, SegState};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
@@ -36,7 +37,7 @@ pub struct BodyToPetriNet<'translate, 'analysis, 'tcx> {
     body: &'translate Body<'tcx>,
     tcx: TyCtxt<'tcx>,
     callgraph: &'translate CallGraph<'tcx>,
-    pub net: &'translate mut Net,
+    pub net: &'translate mut PtBuilder,
     alias: &'translate mut RefCell<AliasEngine<'analysis, 'tcx>>,
     pub lockguards: Arc<LockGuardMap<'tcx>>,
     functions: &'translate FunctionRegistry,
@@ -101,7 +102,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         body: &'translate Body<'tcx>,
         tcx: TyCtxt<'tcx>,
         callgraph: &'translate CallGraph<'tcx>,
-        net: &'translate mut Net,
+        net: &'translate mut PtBuilder,
         alias: &'translate mut RefCell<AliasEngine<'analysis, 'tcx>>,
         lockguards: Arc<LockGuardMap<'tcx>>,
         functions: &'translate FunctionRegistry,
@@ -140,7 +141,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             exclude_bb: FxHashSet::default(),
             back_edges: FxHashSet::default(),
             break_cfg_cycles,
-            return_transition: TransitionId::new(0),
+            return_transition: TransitionId(0),
             entry_exit,
             key_api_regex,
             alias_unknown_policy,
@@ -161,11 +162,11 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             let tid = s.instance_id.index();
             s.seg.seg_index.insert(tid, 0);
             let seg_place = s.ensure_seg_place(tid, 0);
-            if let Some(place) = s.net.get_place_mut(seg_place) {
-                place.tokens = 1;
-                if place.capacity < 1 {
-                    place.capacity = 1;
-                }
+            s.net.set_place_tokens(seg_place, 1);
+            if let Some(place) = s.net.place_mut(seg_place)
+                && place.capacity.map_or(true, |c| c < 1)
+            {
+                place.capacity = Some(1);
             }
         }
 

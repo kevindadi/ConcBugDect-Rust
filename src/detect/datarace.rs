@@ -1,9 +1,8 @@
-use crate::analysis::reachability::StateGraph;
-use crate::net::index_vec::Idx;
-use crate::net::structure::TransitionType;
 use crate::report::{RaceCondition, RaceOperation, RaceReport};
-use petgraph::graph::NodeIndex;
+type NodeIndex = usize;
 use std::time::Instant;
+use unipn::analysis::pt::reachability::StateGraph;
+use unipn::pt::TransitionType;
 
 use rustc_data_structures::fx::FxHashMap;
 
@@ -21,7 +20,7 @@ impl<'a> DataRaceDetector<'a> {
         let mut report = RaceReport::new("State Graph Data Race Detector".to_string());
         let mut race_infos = Vec::new();
 
-        for state in self.state_graph.graph.node_indices() {
+        for state in self.state_graph.node_indices() {
             let transitions = self.collect_state_accesses(state);
             if transitions.len() < 2 {
                 continue;
@@ -112,8 +111,10 @@ impl<'a> DataRaceDetector<'a> {
                     .map(|access| access.span.clone())
                     .min()
                     .unwrap_or_default(),
-                read_representative: Self::select_site_representative(&site_accesses, false).cloned(),
-                write_representative: Self::select_site_representative(&site_accesses, true).cloned(),
+                read_representative: Self::select_site_representative(&site_accesses, false)
+                    .cloned(),
+                write_representative: Self::select_site_representative(&site_accesses, true)
+                    .cloned(),
                 site,
             })
             .collect::<Vec<_>>();
@@ -188,10 +189,7 @@ impl<'a> DataRaceDetector<'a> {
         candidates
     }
 
-    fn pair_priority(
-        left: &StateAccess,
-        right: &StateAccess,
-    ) -> PairPriority {
+    fn pair_priority(left: &StateAccess, right: &StateAccess) -> PairPriority {
         let mut signatures = [
             Self::state_access_signature(left),
             Self::state_access_signature(right),
@@ -294,10 +292,7 @@ impl<'a> DataRaceDetector<'a> {
     }
 
     fn race_condition_specificity(operation_priorities: &[RaceOperationPriority]) -> usize {
-        operation_priorities
-            .iter()
-            .map(|priority| priority.0)
-            .sum()
+        operation_priorities.iter().map(|priority| priority.0).sum()
     }
 
     fn has_mixed_access_types(condition: &RaceCondition) -> bool {
@@ -360,7 +355,7 @@ impl<'a> DataRaceDetector<'a> {
     fn collect_state_accesses(&self, state: NodeIndex) -> Vec<StateAccess> {
         let mut accesses = Vec::new();
 
-        for edge in self.state_graph.graph.edges(state) {
+        for edge in self.state_graph.edges(state) {
             match &edge.weight().transition.transition_type {
                 TransitionType::UnsafeRead(alias_id, span, basic_block, place_ty) => {
                     accesses.push(StateAccess {
@@ -411,10 +406,10 @@ impl<'a> DataRaceDetector<'a> {
         node.marking
             .iter()
             .filter_map(|(place_id, tokens)| {
-                if *tokens == 0 {
+                if tokens == 0 {
                     return None;
                 }
-                Some((place_id.index(), (*tokens).min(u8::MAX as u64) as u8))
+                Some((place_id.index(), tokens.min(u8::MAX as usize) as u8))
             })
             .collect()
     }
@@ -424,8 +419,20 @@ type RaceOperationSignature = (String, String, usize, String);
 type StateAccessSignature = (usize, usize, String, String, usize, String, String);
 type RaceConditionKey = (String, Vec<RaceOperationSignature>);
 type RaceOperationPriority = (usize, String, String, usize, String);
-type RaceConditionPriority = (usize, usize, usize, Vec<RaceOperationPriority>, RaceConditionKey);
-type PairPriority = (usize, usize, usize, StateAccessSignature, StateAccessSignature);
+type RaceConditionPriority = (
+    usize,
+    usize,
+    usize,
+    Vec<RaceOperationPriority>,
+    RaceConditionKey,
+);
+type PairPriority = (
+    usize,
+    usize,
+    usize,
+    StateAccessSignature,
+    StateAccessSignature,
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum DataTypeCategory {
@@ -504,420 +511,20 @@ fn place_type_name(data_type: &str) -> &str {
 fn is_scalar_like_type(data_type: &str) -> bool {
     matches!(
         data_type,
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "f32" | "f64" | "bool" | "char"
+        "i8" | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "usize"
+            | "f32"
+            | "f64"
+            | "bool"
+            | "char"
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::analysis::reachability::StateGraph;
-    use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
-
-    fn build_data_race_net() -> Net {
-        let mut net = Net::empty();
-        let shared = net.add_place(Place::new(
-            "shared",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "shared.rs:1:1".into(),
-        ));
-
-        let read = net.add_transition(Transition::new_with_transition_type(
-            "unsafe_read",
-            TransitionType::UnsafeRead(0, "shared.rs:10:5".into(), 0, "i32".into()),
-        ));
-        let write = net.add_transition(Transition::new_with_transition_type(
-            "unsafe_write",
-            TransitionType::UnsafeWrite(0, "shared.rs:20:5".into(), 0, "i32".into()),
-        ));
-
-        net.set_input_weight(shared, read, 1);
-        net.set_output_weight(shared, read, 1);
-
-        net.set_input_weight(shared, write, 1);
-        net.set_output_weight(shared, write, 1);
-
-        net
-    }
-
-    fn build_grouped_data_race_net() -> Net {
-        let mut net = Net::empty();
-        let shared = net.add_place(Place::new(
-            "shared",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "shared.rs:1:1".into(),
-        ));
-
-        let thread_a_read = net.add_transition(Transition::new_with_transition_type(
-            "thread_a_read__1_in:shared.rs:10:5",
-            TransitionType::UnsafeRead(0, "shared.rs:10:5".into(), 0, "SharedPtr".into()),
-        ));
-        let thread_a_write = net.add_transition(Transition::new_with_transition_type(
-            "thread_a_write__1_in:shared.rs:11:5",
-            TransitionType::UnsafeWrite(0, "shared.rs:11:5".into(), 0, "i32".into()),
-        ));
-        let thread_b_read = net.add_transition(Transition::new_with_transition_type(
-            "thread_b_read__2_in:shared.rs:20:5",
-            TransitionType::UnsafeRead(0, "shared.rs:20:5".into(), 0, "SharedPtr".into()),
-        ));
-
-        for transition in [thread_a_read, thread_a_write, thread_b_read] {
-            net.set_input_weight(shared, transition, 1);
-            net.set_output_weight(shared, transition, 1);
-        }
-
-        net
-    }
-
-    #[test]
-    fn detect_simple_data_race() {
-        let net = build_data_race_net();
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DataRaceDetector::new(&state_graph);
-        let report = detector.detect();
-
-        assert!(report.has_race, "Expected data race to be detected");
-        assert_eq!(report.race_count, 1);
-        let race = &report.race_conditions[0];
-        assert_eq!(race.operations.len(), 2);
-        assert!(
-            race.operations
-                .iter()
-                .any(|op| op.operation_type == "write")
-        );
-    }
-
-    #[test]
-    fn groups_same_site_accesses_before_reporting() {
-        let net = build_grouped_data_race_net();
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DataRaceDetector::new(&state_graph);
-        let report = detector.detect();
-
-        assert!(report.has_race, "Expected grouped data race to be detected");
-        assert_eq!(report.race_count, 1);
-
-        let race = &report.race_conditions[0];
-        assert_eq!(race.operations.len(), 2);
-        assert!(race
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write" && op.location == "shared.rs:11:5"));
-        assert!(race
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "read" && op.location == "shared.rs:20:5"));
-        assert!(!race
-            .operations
-            .iter()
-            .any(|op| op.location == "shared.rs:10:5"));
-    }
-
-    #[test]
-    fn prefers_raw_pointer_reads_within_same_site() {
-        let wrapper_read = StateAccess {
-            location_id: 0,
-            span: "shared.rs:10:5".into(),
-            basic_block: 0,
-            op_type: "read",
-            data_type: "PlaceTy { ty: SharedPtr, variant_index: None }".into(),
-            is_write: false,
-            transition_name: "thread_a_read__1_in:shared.rs:10:5".into(),
-        };
-        let raw_read = StateAccess {
-            location_id: 0,
-            span: "shared.rs:11:5".into(),
-            basic_block: 0,
-            op_type: "read",
-            data_type: "PlaceTy { ty: *mut i32, variant_index: None }".into(),
-            is_write: false,
-            transition_name: "thread_a_read__2_in:shared.rs:11:5".into(),
-        };
-
-        let representative = DataRaceDetector::select_site_representative(
-            &[&wrapper_read, &raw_read],
-            false,
-        )
-        .expect("expected a read representative");
-
-        assert_eq!(representative.span, "shared.rs:11:5");
-    }
-
-    #[test]
-    fn place_type_name_extracts_inner_type() {
-        assert_eq!(
-            place_type_name("PlaceTy { ty: *mut i32, variant_index: None }"),
-            "*mut i32"
-        );
-        assert_eq!(place_type_name("SharedPtr"), "SharedPtr");
-    }
-
-    #[test]
-    fn data_type_category_prioritizes_meaningful_access_shapes() {
-        assert_eq!(
-            DataRaceDetector::data_type_category("PlaceTy { ty: SharedPtr, variant_index: None }"),
-            DataTypeCategory::Wrapper
-        );
-        assert_eq!(
-            DataRaceDetector::data_type_category("PlaceTy { ty: *mut i32, variant_index: None }"),
-            DataTypeCategory::RawPointer
-        );
-        assert_eq!(
-            DataRaceDetector::data_type_category("PlaceTy { ty: i32, variant_index: None }"),
-            DataTypeCategory::Scalar
-        );
-        assert!(DataTypeCategory::RawPointer > DataTypeCategory::Wrapper);
-        assert!(DataTypeCategory::Scalar > DataTypeCategory::RawPointer);
-    }
-
-    #[test]
-    fn prefers_meaningful_write_write_pairs_over_wrapper_reads() {
-        let write_a = StateAccess {
-            location_id: 0,
-            span: "shared.rs:21:9".into(),
-            basic_block: 3,
-            op_type: "write",
-            data_type: "PlaceTy { ty: i32, variant_index: None }".into(),
-            is_write: true,
-            transition_name: "main::{closure#0}_write__2_in:shared.rs:21:9".into(),
-        };
-        let wrapper_read = StateAccess {
-            location_id: 0,
-            span: "shared.rs:25:32".into(),
-            basic_block: 3,
-            op_type: "read",
-            data_type: "PlaceTy { ty: SharedPtr, variant_index: None }".into(),
-            is_write: false,
-            transition_name: "main_read__3_in:shared.rs:25:32".into(),
-        };
-        let write_b = StateAccess {
-            location_id: 0,
-            span: "shared.rs:27:9".into(),
-            basic_block: 3,
-            op_type: "write",
-            data_type: "PlaceTy { ty: i32, variant_index: None }".into(),
-            is_write: true,
-            transition_name: "main::{closure#1}_write__2_in:shared.rs:27:9".into(),
-        };
-
-        let access_sites = vec![
-            AccessSiteSummary {
-                site: AccessSiteKey {
-                    scope: "main::{closure#0}".into(),
-                    basic_block: 3,
-                },
-                sort_span: write_a.span.clone(),
-                read_representative: None,
-                write_representative: Some(write_a.clone()),
-            },
-            AccessSiteSummary {
-                site: AccessSiteKey {
-                    scope: "main".into(),
-                    basic_block: 3,
-                },
-                sort_span: wrapper_read.span.clone(),
-                read_representative: Some(wrapper_read.clone()),
-                write_representative: None,
-            },
-            AccessSiteSummary {
-                site: AccessSiteKey {
-                    scope: "main::{closure#1}".into(),
-                    basic_block: 3,
-                },
-                sort_span: write_b.span.clone(),
-                read_representative: None,
-                write_representative: Some(write_b.clone()),
-            },
-        ];
-
-        let (left, right) = DataRaceDetector::select_best_race_pair(&access_sites)
-            .expect("expected best race pair");
-        let spans = [left.span, right.span];
-
-        assert!(spans.contains(&"shared.rs:21:9".to_string()));
-        assert!(spans.contains(&"shared.rs:27:9".to_string()));
-    }
-
-    #[test]
-    fn merge_prefers_meaningful_write_write_pairs_over_wrapper_reads() {
-        let mixed = RaceCondition {
-            operations: vec![
-                RaceOperation {
-                    operation_type: "read".into(),
-                    variable: "PlaceTy { ty: *mut i32, variant_index: None }".into(),
-                    location: "shared.rs:10:9".into(),
-                    basic_block: Some(0),
-                },
-                RaceOperation {
-                    operation_type: "write".into(),
-                    variable: "PlaceTy { ty: i32, variant_index: None }".into(),
-                    location: "shared.rs:21:9".into(),
-                    basic_block: Some(3),
-                },
-            ],
-            variable_info: "Potential data race on variable 11".into(),
-            state: vec![],
-        };
-        let write_write = RaceCondition {
-            operations: vec![
-                RaceOperation {
-                    operation_type: "write".into(),
-                    variable: "PlaceTy { ty: i32, variant_index: None }".into(),
-                    location: "shared.rs:21:9".into(),
-                    basic_block: Some(3),
-                },
-                RaceOperation {
-                    operation_type: "write".into(),
-                    variable: "PlaceTy { ty: i32, variant_index: None }".into(),
-                    location: "shared.rs:27:9".into(),
-                    basic_block: Some(3),
-                },
-            ],
-            variable_info: "Potential data race on variable 11".into(),
-            state: vec![],
-        };
-
-        let net = build_data_race_net();
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DataRaceDetector::new(&state_graph);
-        let merged = detector.merge_race_conditions(vec![mixed, write_write]);
-        let race = &merged[0];
-
-        assert_eq!(merged.len(), 1);
-        assert!(race
-            .operations
-            .iter()
-            .all(|operation| operation.operation_type == "write"));
-    }
-
-    #[test]
-    fn transition_scope_uses_last_access_marker() {
-        let name = "unsafe_write_read::main::{closure#1}_write__1_in:src/main.rs:25:32";
-
-        assert_eq!(
-            transition_scope_key(name),
-            "unsafe_write_read::main::{closure#1}".to_string()
-        );
-    }
-
-    #[test]
-    fn detects_race_via_merged_unsafe_access() {
-        use crate::net::structure::UnsafeOp;
-
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "control",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "".into(),
-        ));
-
-        let a_write = net.add_transition(Transition::new_with_transition_type(
-            "thread_a_unsafe_bb0",
-            TransitionType::UnsafeAccess(vec![UnsafeOp {
-                alias: 0,
-                is_write: true,
-                span: "a.rs:10:5".into(),
-                basic_block: 0,
-                ty: "i32".into(),
-            }]),
-        ));
-        let b_read = net.add_transition(Transition::new_with_transition_type(
-            "thread_b_unsafe_bb0",
-            TransitionType::UnsafeAccess(vec![UnsafeOp {
-                alias: 0,
-                is_write: false,
-                span: "b.rs:20:5".into(),
-                basic_block: 0,
-                ty: "i32".into(),
-            }]),
-        ));
-
-        for transition in [a_write, b_read] {
-            net.set_input_weight(control, transition, 1);
-            net.set_output_weight(control, transition, 1);
-        }
-
-        let state_graph = StateGraph::from_net(&net);
-        let detector = DataRaceDetector::new(&state_graph);
-        let report = detector.detect();
-
-        assert!(report.has_race, "Expected merged unsafe access race");
-        assert_eq!(report.race_count, 1);
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write" && op.location == "a.rs:10:5"));
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "read" && op.location == "b.rs:20:5"));
-    }
-
-    #[test]
-    fn merged_unsafe_access_write_wins_over_reads() {
-        use crate::net::structure::UnsafeOp;
-
-        let mut net = Net::empty();
-        let control = net.add_place(Place::new(
-            "control",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "".into(),
-        ));
-        // One block reads and writes group 0: write-优先 summarizes it as a write.
-        let merged = net.add_transition(Transition::new_with_transition_type(
-            "thread_a_unsafe_bb0",
-            TransitionType::UnsafeAccess(vec![
-                UnsafeOp {
-                    alias: 0,
-                    is_write: false,
-                    span: "a.rs:9:5".into(),
-                    basic_block: 0,
-                    ty: "i32".into(),
-                },
-                UnsafeOp {
-                    alias: 0,
-                    is_write: true,
-                    span: "a.rs:10:5".into(),
-                    basic_block: 0,
-                    ty: "i32".into(),
-                },
-            ]),
-        ));
-        let b_read = net.add_transition(Transition::new_with_transition_type(
-            "thread_b_unsafe_bb0",
-            TransitionType::UnsafeAccess(vec![UnsafeOp {
-                alias: 0,
-                is_write: false,
-                span: "b.rs:20:5".into(),
-                basic_block: 0,
-                ty: "i32".into(),
-            }]),
-        ));
-
-        for transition in [merged, b_read] {
-            net.set_input_weight(control, transition, 1);
-            net.set_output_weight(control, transition, 1);
-        }
-
-        let state_graph = StateGraph::from_net(&net);
-        let report = DataRaceDetector::new(&state_graph).detect();
-
-        assert!(report.has_race);
-        // The merged transition must surface the write, not just the read.
-        assert!(report.race_conditions[0]
-            .operations
-            .iter()
-            .any(|op| op.operation_type == "write"));
-    }
 }

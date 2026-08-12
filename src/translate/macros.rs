@@ -22,11 +22,11 @@ macro_rules! transition_name {
 #[macro_export]
 macro_rules! bb_place {
     ($net:expr, $name:expr, $span:expr) => {{
-        let place = $crate::net::Place::new(
+        let place = unipn::pt::PtPlace::new(
             $name,
             0,
             1,
-            $crate::net::structure::PlaceType::BasicBlock,
+            unipn::pt::PlaceType::BasicBlock,
             $span.into(),
         );
         $net.add_place(place)
@@ -39,7 +39,7 @@ macro_rules! bb_place {
 macro_rules! add_fallthrough_transition {
     ($self:expr, $bb_idx:expr, $name:expr, $kind:expr, $trans_type:expr, $target:expr) => {{
         let t_name = $crate::transition_name!($name, $bb_idx, $kind);
-        let t = $crate::net::Transition::new_with_transition_type(t_name, $trans_type);
+        let t = unipn::pt::PtTransition::new_with_transition_type(t_name, $trans_type);
         let t_id = $self.net.add_transition(t);
         $self
             .net
@@ -57,7 +57,7 @@ macro_rules! add_fallthrough_transition {
 macro_rules! add_terminal_transition {
     ($self:expr, $bb_idx:expr, $name:expr, $kind:expr, $trans_type:expr) => {{
         let t_name = $crate::transition_name!($name, $bb_idx, $kind);
-        let t = $crate::net::Transition::new_with_transition_type(t_name, $trans_type);
+        let t = unipn::pt::PtTransition::new_with_transition_type(t_name, $trans_type);
         let t_id = $self.net.add_transition(t);
         $self
             .net
@@ -76,7 +76,7 @@ macro_rules! add_wait_ret_subnet {
         let wait_name = $crate::transition_name!($name, $bb_idx, $kind_wait);
         let wait_place = $crate::bb_place!($self.net, wait_name, $span);
         let ret_name = $crate::transition_name!($name, $bb_idx, $kind_ret);
-        let ret_t = $crate::net::Transition::new_with_transition_type(ret_name, $trans_type);
+        let ret_t = unipn::pt::PtTransition::new_with_transition_type(ret_name, $trans_type);
         let ret_id = $self.net.add_transition(ret_t);
         $self.net.add_output_arc(wait_place, $bb_end, 1);
         $self.net.add_input_arc(wait_place, ret_id, 1);

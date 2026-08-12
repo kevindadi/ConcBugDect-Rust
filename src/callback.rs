@@ -1,7 +1,6 @@
 extern crate rustc_driver;
 extern crate rustc_hir;
 
-use crate::analysis::reachability::{StateGraph, StateGraphConfig};
 use crate::config::ReportLevel;
 use crate::detect::atomicity_violation::AtomicityViolationDetector;
 use crate::detect::datarace::DataRaceDetector;
@@ -22,6 +21,7 @@ use serde::Serialize;
 use std::fmt::{Debug, Formatter, Result};
 use std::path::PathBuf;
 use std::time::Instant;
+use unipn::analysis::pt::reachability::{StateGraph, StateGraphConfig};
 
 #[derive(Clone)]
 pub struct PTACallbacks {
@@ -120,8 +120,7 @@ impl PTACallbacks {
         if !self.options.targets_current_crate(&current_crate_name) {
             debug!(
                 "skip Petri net construction for crate {} (target crate: {})",
-                current_crate_name,
-                self.options.crate_name
+                current_crate_name, self.options.crate_name
             );
             return;
         }
@@ -164,6 +163,8 @@ impl PTACallbacks {
         let net_construct_time = net_construct_start.elapsed();
         log::info!("Petri net constructed in {:?}", net_construct_time);
 
+        let (mut net, mut marking) = pn.net.snapshot();
+
         let mut reduced_stage_written = false;
         if self.options.dump_options.dump_petri_net {
             if let Err(err) = pn
@@ -178,11 +179,13 @@ impl PTACallbacks {
 
         let mut net_reduce_time = None::<std::time::Duration>;
         if self.options.config.reduce_net {
-            use crate::net::reduce::{ReductionOptions, reduce_in_place};
+            use unipn::analysis::pt::reduce::{ReductionOptions, reduce_in_place};
             let reduce_start = Instant::now();
-            match reduce_in_place(&mut pn.net, ReductionOptions::default()) {
+            match reduce_in_place(&net, &marking, ReductionOptions::default()) {
                 Ok(result) => {
                     net_reduce_time = Some(reduce_start.elapsed());
+                    net = result.net;
+                    marking = result.marking;
                     log::info!(
                         "Petri net reduced in {:?}: {} steps (loops/sequences/intermediate)",
                         net_reduce_time,
@@ -262,12 +265,19 @@ impl PTACallbacks {
                 use_por: self.options.config.por_enabled,
             };
             let sg_build_start = Instant::now();
-            let sg = StateGraph::with_config(&pn.net, sg_config);
+            let sg = StateGraph::with_config(&net, marking.clone(), sg_config);
             let sg_build_time = sg_build_start.elapsed();
             log::info!("State graph built in {:?}", sg_build_time);
             self.handle_visualizations(&callgraph, &pn, &sg);
             if self.is_research_report() {
-                self.write_summary(&callgraph, &pn, &sg, net_construct_time, net_reduce_time, sg_build_time);
+                self.write_summary(
+                    &callgraph,
+                    &pn,
+                    &sg,
+                    net_construct_time,
+                    net_reduce_time,
+                    sg_build_time,
+                );
             }
             return;
         }
@@ -278,7 +288,7 @@ impl PTACallbacks {
             use_por: self.options.config.por_enabled,
         };
         let sg_build_start = Instant::now();
-        let state_graph = StateGraph::with_config(&pn.net, sg_config);
+        let state_graph = StateGraph::with_config(&net, marking.clone(), sg_config);
         let sg_build_time = sg_build_start.elapsed();
         log::info!("State graph built in {:?}", sg_build_time);
         if state_graph.truncated {
@@ -293,14 +303,28 @@ impl PTACallbacks {
             log::info!("Stopping analysis after state graph construction");
             self.handle_visualizations(&callgraph, &pn, &state_graph);
             if self.is_research_report() {
-                self.write_summary(&callgraph, &pn, &state_graph, net_construct_time, net_reduce_time, sg_build_time);
+                self.write_summary(
+                    &callgraph,
+                    &pn,
+                    &state_graph,
+                    net_construct_time,
+                    net_reduce_time,
+                    sg_build_time,
+                );
             }
             return;
         }
 
         self.handle_visualizations(&callgraph, &pn, &state_graph);
         if self.is_research_report() {
-            self.write_summary(&callgraph, &pn, &state_graph, net_construct_time, net_reduce_time, sg_build_time);
+            self.write_summary(
+                &callgraph,
+                &pn,
+                &state_graph,
+                net_construct_time,
+                net_reduce_time,
+                sg_build_time,
+            );
         }
         self.run_detectors(&state_graph);
 

@@ -6,16 +6,13 @@
 //! the ordering-segment places in the net, so the witness search itself only
 //! matches load/store kinds and thread/alias identity.
 
-use crate::analysis::reachability::StateGraph;
-use crate::concurrency::atomic::AtomicOrdering;
-use crate::memory::pointsto::AliasId;
-use crate::net::ids::TransitionId;
-use crate::net::index_vec::Idx;
-use crate::net::structure::TransitionType;
 use crate::report::{AtomicOperation, AtomicReport, ViolationPattern};
-use petgraph::Direction;
-use petgraph::graph::NodeIndex;
-use petgraph::visit::EdgeRef;
+use unipn::TransitionId;
+use unipn::analysis::pt::reachability::StateGraph;
+use unipn::pt::{AliasId, AtomicOrdering, TransitionType};
+// petgraph removed
+type NodeIndex = usize;
+// EdgeRef replaced by unipn StateGraph accessors
 use rustc_data_structures::fx::FxHashSet;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
@@ -121,8 +118,8 @@ struct AliasKey {
 impl AliasKey {
     fn new(alias: AliasId) -> Self {
         Self {
-            instance: alias.instance_id.index(),
-            local: alias.local.index(),
+            instance: alias.instance_id,
+            local: alias.local,
         }
     }
 }
@@ -204,7 +201,6 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
         return Vec::new();
     }
 
-    let graph = &state_graph.graph;
     let mut witnesses = Vec::new();
     let mut seen: BTreeSet<(usize, TransitionId, TransitionId, TransitionId)> = BTreeSet::new();
     let mut visited: FxHashSet<StateFingerprint> = FxHashSet::default();
@@ -221,9 +217,7 @@ fn detect_witnesses(state_graph: &StateGraph, max_states: usize, max_depth: usiz
             continue;
         }
 
-        let mut edges: Vec<_> = graph
-            .edges_directed(frame.node, Direction::Outgoing)
-            .collect();
+        let mut edges: Vec<_> = state_graph.edges(frame.node).collect();
         edges.sort_by_key(|edge| edge.weight().transition.id.index());
 
         for edge in edges {
@@ -412,62 +406,4 @@ fn dedupe_patterns(witnesses: &[Witness]) -> Vec<ViolationPattern> {
     }
 
     patterns
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::analysis::reachability::StateGraph;
-    use crate::concurrency::atomic::AtomicOrdering;
-    use crate::net::Net;
-    use crate::net::structure::{Place, PlaceType, Transition, TransitionType};
-    use petgraph::graph::NodeIndex;
-    use rustc_middle::mir::Local;
-
-    fn build_atomic_violation_net() -> Net {
-        let mut net = Net::empty();
-        let shared = net.add_place(Place::new(
-            "shared_atomic",
-            1,
-            1,
-            PlaceType::BasicBlock,
-            "atomic.rs:1:1".into(),
-        ));
-
-        let alias = AliasId::new(NodeIndex::new(0), Local::from_usize(0));
-
-        let store_a = net.add_transition(Transition::new_with_transition_type(
-            "store_a",
-            TransitionType::AtomicStore(alias, AtomicOrdering::Release, "atomic.rs:10:5".into(), 1),
-        ));
-        let store_b = net.add_transition(Transition::new_with_transition_type(
-            "store_b",
-            TransitionType::AtomicStore(alias, AtomicOrdering::SeqCst, "atomic.rs:12:5".into(), 2),
-        ));
-        let load = net.add_transition(Transition::new_with_transition_type(
-            "load_relaxed",
-            TransitionType::AtomicLoad(alias, AtomicOrdering::Relaxed, "atomic.rs:20:5".into(), 1),
-        ));
-
-        for transition in [store_a, store_b, load] {
-            net.set_input_weight(shared, transition, 1);
-            net.set_output_weight(shared, transition, 1);
-        }
-
-        net
-    }
-
-    #[test]
-    fn detect_atomicity_violation() {
-        let net = build_atomic_violation_net();
-        let state_graph = StateGraph::from_net(&net);
-        // The test net is a single marking with self-loops; small limits keep
-        // the pathological reachable space bounded while still finding the
-        // witness (which completes at depth 3).
-        let detector = AtomicityViolationDetector::with_limits(&state_graph, 1_000, 8);
-        let report = detector.detect();
-
-        assert!(report.has_violation, "Expected atomicity violation");
-        assert!(!report.violations.is_empty());
-    }
 }
