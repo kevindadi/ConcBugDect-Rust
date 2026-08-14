@@ -163,12 +163,12 @@ impl PTACallbacks {
         let net_construct_time = net_construct_start.elapsed();
         log::info!("Petri net constructed in {:?}", net_construct_time);
 
-        let (mut net, mut marking) = pn.net.snapshot();
+        let (mut net, mut marking) = pn.builder.snapshot();
 
         let mut reduced_stage_written = false;
         if self.options.dump_options.dump_petri_net {
             if let Err(err) = pn
-                .net
+                .builder
                 .write_dot(self.output_directory.join("petrinet_raw.dot"))
             {
                 error!("failed to write raw Petri net dot file: {err}");
@@ -241,11 +241,11 @@ impl PTACallbacks {
         }
 
         if self.is_research_report() {
-            pn.net.log_diagnostics();
+            pn.builder.log_diagnostics();
         }
 
         if self.is_research_report() && self.options.dump_options.dump_petri_net {
-            let report = pn.net.diagnose_connectivity();
+            let report = pn.builder.diagnose_connectivity();
             if report.has_issues() {
                 let report_path = self.output_directory.join("petri_net_diagnostics.txt");
                 if let Err(err) = report.save_to_file(report_path.to_str().unwrap_or("")) {
@@ -356,7 +356,10 @@ impl PTACallbacks {
         }
 
         if dump.dump_petri_net {
-            if let Err(err) = pn.net.write_dot(self.output_directory.join("petrinet.dot")) {
+            if let Err(err) = pn
+                .builder
+                .write_dot(self.output_directory.join("petrinet.dot"))
+            {
                 error!("failed to write Petri net dot file: {err}");
             } else {
                 info!("petri net dot exported");
@@ -545,8 +548,8 @@ impl PTACallbacks {
             reduced: self.options.config.reduce_net,
             metrics: SummaryMetrics {
                 callable_functions: callgraph.graph.node_count(),
-                places: pn.net.places_len(),
-                transitions: pn.net.transitions_len(),
+                places: pn.builder.places_len(),
+                transitions: pn.builder.transitions_len(),
                 state_classes: stats.state_count,
                 state_edges: stats.edge_count,
                 deadlock_states: stats.deadlock_count,

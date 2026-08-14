@@ -4,11 +4,11 @@ use crate::concurrency::blocking::BlockingCollector;
 use crate::concurrency::channel::{ChannelCollector, ChannelInfo, EndpointType};
 use crate::memory::pointsto::AliasId;
 use crate::memory::unsafe_memory::UnsafeAnalyzer;
-use unipn::pt::PlaceType;
 use crate::translate::structure::{FunctionRegistry, KeyApiRegex, ResourceRegistry};
 use crate::util::format_name;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::IntoNodeReferences;
+use unipn::pt::PlaceType;
 
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use rustc_hir::def_id::DefId;
@@ -19,9 +19,9 @@ use std::time::Instant;
 use super::callgraph::{CallGraph, CallGraphNode, InstanceId};
 use crate::concurrency::blocking::{LockGuardId, LockGuardMap, LockGuardTy};
 use crate::memory::alias_engine::AliasEngine;
-use unipn::pt::{PtBuilder, PtPlace};
-use unipn::PlaceId;
 use crate::translate::mir_to_pn::BodyToPetriNet;
+use unipn::PlaceId;
+use unipn::pt::{PtBuilder, PtPlace};
 
 fn find(union_find: &FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId) -> LockGuardId {
     let mut current = x;
@@ -42,7 +42,7 @@ fn union(union_find: &mut FxHashMap<LockGuardId, LockGuardId>, x: &LockGuardId, 
 pub struct PetriNet<'analysis, 'tcx> {
     options: Options,
     tcx: rustc_middle::ty::TyCtxt<'tcx>,
-    pub net: PtBuilder,
+    pub builder: PtBuilder,
     callgraph: &'analysis CallGraph<'tcx>,
     pub alias: RefCell<AliasEngine<'analysis, 'tcx>>,
     functions: FunctionRegistry,
@@ -72,7 +72,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         span: String,
     ) -> PlaceId {
         let place = PtPlace::new(name, initial, capacity, PlaceType::Resources, span);
-        self.net.add_place(place)
+        self.builder.add_place(place)
     }
 
     pub fn new(
@@ -84,7 +84,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         Self {
             options,
             tcx,
-            net: PtBuilder::empty(),
+            builder: PtBuilder::empty(),
             callgraph,
             alias,
             functions: FunctionRegistry::new(),
@@ -258,9 +258,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         // id for each local. The merged unsafe transitions carry the group id.
         for (group_id, group) in alias_groups {
             for (local, _) in group {
-                self.resources
-                    .unsafe_groups_mut()
-                    .insert(local, group_id);
+                self.resources.unsafe_groups_mut().insert(local, group_id);
             }
         }
     }
@@ -330,7 +328,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             body,
             self.tcx,
             &self.callgraph,
-            &mut self.net,
+            &mut self.builder,
             &mut self.alias,
             Arc::clone(&self.lock_info),
             &self.functions,
@@ -523,8 +521,8 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             String::default(),
         );
 
-        let start_id = self.net.add_place(start);
-        let end_id = self.net.add_place(end);
+        let start_id = self.builder.add_place(start);
+        let end_id = self.builder.add_place(end);
 
         (start_id, end_id)
     }
@@ -557,7 +555,10 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
         // receivers both point at the same lock. When a receiver is unknown we
         // fall back to guard aliasing to stay sound.
         let alias_id_for = |guard: &LockGuardId| -> AliasId {
-            lock_objects.get(guard).copied().unwrap_or_else(|| guard.clone().into())
+            lock_objects
+                .get(guard)
+                .copied()
+                .unwrap_or_else(|| guard.clone().into())
         };
 
         let policy = self.options.config.alias_unknown_policy;
@@ -565,10 +566,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             for j in i + 1..lockid_vec.len() {
                 let ri = alias_id_for(&lockid_vec[i]);
                 let rj = alias_id_for(&lockid_vec[j]);
-                let result = self
-                    .alias
-                    .borrow_mut()
-                    .alias(ri, rj);
+                let result = self.alias.borrow_mut().alias(ri, rj);
                 if result.may_alias(policy) {
                     log::debug!(
                         "Locks {:?} and {:?} may alias",
@@ -683,7 +681,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 PlaceType::FunctionStart,
                 String::default(),
             );
-            let func_start_node_id = self.net.add_place(func_start);
+            let func_start_node_id = self.builder.add_place(func_start);
             let func_end = PtPlace::new(
                 format!("{}_end", func_name),
                 0,
@@ -691,7 +689,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 PlaceType::FunctionEnd,
                 String::default(),
             );
-            let func_end_node_id = self.net.add_place(func_end);
+            let func_end_node_id = self.builder.add_place(func_end);
             (func_start_node_id, func_end_node_id)
         })
     }
