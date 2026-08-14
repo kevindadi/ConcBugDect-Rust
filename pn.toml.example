@@ -1,0 +1,60 @@
+# ===== State exploration =====
+# Upper bound on states explored when building the state graph.
+# 0 / omitted means unlimited (risk of OOM on large crates).
+state_limit = 50000
+
+# ===== Pipeline switches =====
+# Translate only entry-reachable functions (shrinks nets on large crates).
+entry_reachable = true
+# Break CFG back edges at MIR level (remove simple cycles).
+break_cfg_cycles = true
+# Reduce the Petri net before state-graph construction.
+reduce_net = true
+# Enable partial-order reduction (skip redundant interleavings).
+por_enabled = false
+# Also translate functions using locks/atomics/semaphores/condvars and their callees.
+translate_concurrent_roots = true
+
+# ===== Alias analysis =====
+# Policy when alias results are Unknown: conservative (default, treat as Possibly) / optimistic (treat as Unlikely).
+alias_unknown_policy = "conservative"
+# Call-site sensitivity depth (k-CFA) for the pointer-analysis engine; 0 = context-insensitive, 1 = default.
+pta_k = 1
+
+# ===== Report =====
+report_level = "developer"   # developer / research
+
+# ===== Concurrency API identification (regex lists) =====
+# Note: regexes contain `\{` / `\}` escapes which are invalid in TOML basic
+# strings, so they must be written as single-quoted literal strings.
+# Thread spawn / join
+thread_spawn = [
+    'rstd::thread[:a-zA-Z0-9_#\{\}]*::spawn',
+    'rayon::spawn',
+]
+thread_join = [
+    'rstd::thread[:a-zA-Z0-9_#\{\}]*::join',
+    'rstd::thread::JoinHandle::try_join',
+]
+# Scoped thread spawn / join
+scope_spawn = [
+    'rstd::thread::scoped[:a-zA-Z0-9_#\{\}]*::spawn',
+    'rstd::thread::scope::Scope::spawn',
+    'rcrossbeam::scope::Scope::spawn',
+    'rayon::scope::Scope::spawn',
+]
+scope_join = [
+    'rstd::thread::scoped[:a-zA-Z0-9_#\{\}]*::join',
+    'rstd::thread::scope::Scope::join',
+    'rcrossbeam::scope::Scope::join',
+    'rayon::scope::Scope::join',
+]
+# Condition variables
+condvar_notify = ['rstd::sync::Condvar[:a-zA-Z0-9_#\{\}]*::notify']
+condvar_wait  = ['rstd::sync::Condvar[:a-zA-Z0-9_#\{\}]*::wait']
+# Channels
+channel_send = ['rmpsc[:a-zA-Z0-9_#\{\}]*::send']
+channel_recv = ['rmpsc[:a-zA-Z0-9_#\{\}]*::recv']
+# Atomic operations
+atomic_load  = ['ratomic[:a-zA-Z0-9]*::load']
+atomic_store = ['ratomic[:a-zA-Z0-9]*::store']
