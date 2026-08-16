@@ -71,7 +71,13 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         // Ordering segments are computed once per MIR operation and shared by
         // every alias alternative, so an acquire/release/seqcst op advances the
         // thread's segment exactly once no matter which candidate fires.
-        let seg_arcs = self.ordering_seg_arcs(tid, order);
+        // Only modeled for `atomic` / `all` modes; other detectors skip the
+        // memory-ordering sequencing.
+        let seg_arcs = if self.translate_atomic_ordering {
+            self.ordering_seg_arcs(tid, order)
+        } else {
+            Vec::new()
+        };
 
         for (idx, (alias_id, resource_place)) in matches.into_iter().enumerate() {
             let transition_name = format!(

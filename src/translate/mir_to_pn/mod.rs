@@ -50,6 +50,9 @@ pub struct BodyToPetriNet<'translate, 'analysis, 'tcx> {
     entry_exit: (PlaceId, PlaceId),
     key_api_regex: &'translate KeyApiRegex,
     alias_unknown_policy: crate::config::AliasUnknownPolicy,
+    /// Whether to translate atomic memory-ordering segment places.
+    /// Only enabled for `atomic` / `all` analysis modes.
+    translate_atomic_ordering: bool,
     ordered_spawn_ends: VecDeque<PlaceId>,
     spawn_handle_end: FxHashMap<Local, PlaceId>,
     local_ref_source: FxHashMap<Local, Local>,
@@ -111,6 +114,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         key_api_regex: &'translate KeyApiRegex,
         alias_unknown_policy: crate::config::AliasUnknownPolicy,
         break_cfg_cycles: bool,
+        translate_atomic_ordering: bool,
     ) -> Self {
         let joinhandle_vec_locals: FxHashSet<Local> = body
             .local_decls
@@ -145,6 +149,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             entry_exit,
             key_api_regex,
             alias_unknown_policy,
+            translate_atomic_ordering,
             ordered_spawn_ends: VecDeque::new(),
             spawn_handle_end: FxHashMap::default(),
             local_ref_source: FxHashMap::default(),
@@ -159,14 +164,16 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         };
 
         {
-            let tid = s.instance_id.index();
-            s.seg.seg_index.insert(tid, 0);
-            let seg_place = s.ensure_seg_place(tid, 0);
-            s.net.set_place_tokens(seg_place, 1);
-            if let Some(place) = s.net.place_mut(seg_place)
-                && place.capacity.map_or(true, |c| c < 1)
-            {
-                place.capacity = Some(1);
+            if s.translate_atomic_ordering {
+                let tid = s.instance_id.index();
+                s.seg.seg_index.insert(tid, 0);
+                let seg_place = s.ensure_seg_place(tid, 0);
+                s.net.set_place_tokens(seg_place, 1);
+                if let Some(place) = s.net.place_mut(seg_place)
+                    && place.capacity.map_or(true, |c| c < 1)
+                {
+                    place.capacity = Some(1);
+                }
             }
         }
 

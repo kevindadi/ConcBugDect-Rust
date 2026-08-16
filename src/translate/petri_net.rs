@@ -322,6 +322,11 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
 
         // MIR dot dumping happens centrally in callback.rs; intermediate dumps could go here.
 
+        let translate_atomic_ordering = matches!(
+            self.options.detector_kind,
+            crate::options::DetectorKind::AtomicityViolation | crate::options::DetectorKind::All
+        );
+
         let mut func_body = BodyToPetriNet::new(
             node,
             caller.instance(),
@@ -337,6 +342,7 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
             key_api_regex,
             self.options.config.alias_unknown_policy,
             self.options.config.break_cfg_cycles,
+            translate_atomic_ordering,
         );
         func_body.translate();
     }
