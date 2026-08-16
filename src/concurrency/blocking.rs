@@ -433,6 +433,11 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
         }
 
         let guard_locals: Vec<Local> = self.lockguards.keys().map(|g| g.local).collect();
+        log::debug!(
+            "[resolve] instance={:?} guard_locals={:?}",
+            self.instance.def_id(),
+            guard_locals
+        );
         for guard_local in guard_locals {
             if let Some(receiver) = Self::trace_receiver(&def_source, guard_local) {
                 let guard_id = LockGuardId::new(self.instance_id, guard_local);
@@ -444,11 +449,25 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                             array_index: None,
                             field,
                         };
+                        log::debug!(
+                            "[resolve] inst={:?} guard={:?} -> LockAcquire(local={:?}, field={:?})",
+                            self.instance_id,
+                            guard_local,
+                            local,
+                            field
+                        );
                         self.lock_objects.insert(guard_id, alias_id);
                     }
                     DefSource::Forward { .. } => {}
                     DefSource::Borrow { .. } => {}
                 }
+            } else {
+                log::debug!(
+                    "[resolve] inst={:?} guard={:?} UNRESOLVED; def_source={:?}",
+                    self.instance_id,
+                    guard_local,
+                    def_source.get(&guard_local)
+                );
             }
         }
     }

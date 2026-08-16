@@ -573,6 +573,18 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 let ri = alias_id_for(&lockid_vec[i]);
                 let rj = alias_id_for(&lockid_vec[j]);
                 let result = self.alias.borrow_mut().alias(ri, rj);
+                log::debug!(
+                    "[lockgroup] guard {:?}(inst={:?},local={:?}) rx={:?} vs guard {:?}(inst={:?},local={:?}) rx={:?} => {:?}",
+                    lockid_vec[i],
+                    lockid_vec[i].instance_id,
+                    lockid_vec[i].local,
+                    ri,
+                    lockid_vec[j],
+                    lockid_vec[j].instance_id,
+                    lockid_vec[j].local,
+                    rj,
+                    result,
+                );
                 if result.may_alias(policy) {
                     log::debug!(
                         "Locks {:?} and {:?} may alias",
