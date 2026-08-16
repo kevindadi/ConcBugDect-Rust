@@ -49,9 +49,9 @@ scope_join = [
     'rcrossbeam::scope::Scope::join',
     'rayon::scope::Scope::join',
 ]
-# Condition variables
-condvar_notify = ['rstd::sync::Condvar[:a-zA-Z0-9_#\{\}]*::notify']
-condvar_wait  = ['rstd::sync::Condvar[:a-zA-Z0-9_#\{\}]*::wait']
+# Condition variables (std Condvar delegates to the internal poison::condvar impl in MIR)
+condvar_notify = ['rstd::sync::(?:Condvar|poison::condvar)[:a-zA-Z0-9_#\{\}]*::notify']
+condvar_wait  = ['rstd::sync::(?:Condvar|poison::condvar)[:a-zA-Z0-9_#\{\}]*::wait']
 # Channels
 channel_send = ['rmpsc[:a-zA-Z0-9_#\{\}]*::send']
 channel_recv = ['rmpsc[:a-zA-Z0-9_#\{\}]*::recv']

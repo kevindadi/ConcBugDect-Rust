@@ -198,9 +198,15 @@ impl<'a, 'tcx> PtaAliasAnalysis<'a, 'tcx> {
                 ) {
                     return ApproximateAliasKind::Probably;
                 }
-                // Type-parameter heuristic: parameters of same type/index may alias
+                // Type-parameter heuristic: parameters of same type/index may
+                // alias. Only applies when the field projections are compatible —
+                // `self.a` and `self.b` (same `&Foo` parameter) are different
+                // fields of one object and must not be merged.
                 if self.may_alias_via_type_param(ia, aid1.local, ib, aid2.local) {
-                    return ApproximateAliasKind::Possibly;
+                    match (aid1.field, aid2.field) {
+                        (Some(f1), Some(f2)) if f1 != f2 => {}
+                        _ => return ApproximateAliasKind::Possibly,
+                    }
                 }
                 ApproximateAliasKind::Unlikely
             }

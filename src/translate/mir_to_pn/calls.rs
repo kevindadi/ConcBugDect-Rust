@@ -300,6 +300,15 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             let condvar_alias = condvar_id.get_alias_id();
 
             for (id, node) in self.resources.condvars().iter() {
+                let r = self.alias.borrow_mut().alias_atomic(condvar_alias, *id);
+                log::warn!(
+                    "[condvar-alias] {:?} (inst={:?},local={:?}) vs resource key {:?} => {:?}",
+                    callee_func_name,
+                    condvar_alias.instance_id,
+                    condvar_alias.local,
+                    *id,
+                    r
+                );
                 if self
                     .alias
                     .borrow_mut()

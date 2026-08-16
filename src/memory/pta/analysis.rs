@@ -398,13 +398,17 @@ impl<'tcx> PointerAnalysis<'tcx> {
 
     /// Collapsed points-to for a receiver that may carry a single field
     /// projection (an `AliasId.field`), covering every MIR access shape:
-    /// - the base local slot `V_local` itself,
     /// - the direct field slot `V_local.field`,
     /// - the offset into every pointee of the base slot, `*V_local.field`.
     ///
     /// The last shape is what resolves closure upvar receivers (`(*env).field`
     /// where `env` points at the captured environment heap) and `&(*self).mu`
     /// receivers to the object stored at the field.
+    ///
+    /// With a field projection, only the *field-specific* slots/pointees are
+    /// emitted. Including the base var slot or the whole base pointee would
+    /// make every field of the same base alias each other (e.g. `self.mu1`
+    /// aliasing `self.rw1`), collapsing distinct locks into one resource.
     pub fn collapsed_receiver_points_to(
         &mut self,
         result: &PointsToResult,
@@ -434,35 +438,44 @@ impl<'tcx> PointerAnalysis<'tcx> {
             } = loc
             {
                 if *f == func && *base == local && self.arena.path(*path).is_empty() {
-                    keys.insert(self.arena.ci_key(id));
                     base_nodes.push(id);
                     for &p in result.points_to(id) {
-                        keys.insert(self.arena.ci_key(p));
                         base_pointees.push(p);
                     }
                 }
             }
         }
 
-        if let Some(fpath) = field_path {
-            for &id in &base_nodes {
-                if let Some(projected) = self.arena.project(id, fpath) {
-                    keys.extend(
-                        result
-                            .points_to(projected)
-                            .iter()
-                            .map(|&p| self.arena.ci_key(p)),
-                    );
+        match field_path {
+            Some(fpath) => {
+                for &id in &base_nodes {
+                    if let Some(projected) = self.arena.project(id, fpath) {
+                        keys.extend(
+                            result
+                                .points_to(projected)
+                                .iter()
+                                .map(|&p| self.arena.ci_key(p)),
+                        );
+                    }
+                }
+                for &pointee in &base_pointees {
+                    if let Some(projected) = self.arena.project(pointee, fpath) {
+                        keys.insert(self.arena.ci_key(projected));
+                        keys.extend(
+                            result
+                                .points_to(projected)
+                                .iter()
+                                .map(|&p| self.arena.ci_key(p)),
+                        );
+                    }
                 }
             }
-            for &pointee in &base_pointees {
-                if let Some(projected) = self.arena.project(pointee, fpath) {
-                    keys.extend(
-                        result
-                            .points_to(projected)
-                            .iter()
-                            .map(|&p| self.arena.ci_key(p)),
-                    );
+            None => {
+                for &id in &base_nodes {
+                    keys.insert(self.arena.ci_key(id));
+                }
+                for &p in &base_pointees {
+                    keys.insert(self.arena.ci_key(p));
                 }
             }
         }

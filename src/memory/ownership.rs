@@ -175,6 +175,16 @@ pub fn is_wrapper_extract(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
     )
 }
 
+/// `Condvar::wait`-family methods (`wait`/`wait_while`/`wait_timeout`/...).
+/// The guard passed in is released and then re-acquired, so the returned guard
+/// protects the *same* mutex as the argument guard.
+#[inline]
+pub fn is_condvar_wait(def_id: DefId, tcx: TyCtxt<'_>) -> bool {
+    let path = tcx.def_path_str(def_id);
+    let method = path.rsplit("::").next().unwrap_or("");
+    path.contains("Condvar") && method.starts_with("wait")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
