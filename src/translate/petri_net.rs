@@ -604,6 +604,34 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
 
         let mut group_id = 0;
         for group in temp_groups.values() {
+            let rx_names: Vec<String> = group
+                .iter()
+                .map(|g| {
+                    let rx = alias_id_for(g);
+                    let fn_name = self
+                        .callgraph
+                        .index_to_instance(rx.instance_id)
+                        .map(|n| crate::util::format_name(n.instance().def_id()))
+                        .unwrap_or_default();
+                    let fn_name = fn_name
+                        .rsplit("::")
+                        .take(2)
+                        .collect::<Vec<_>>()
+                        .join("::");
+                    format!("{}::_{:?}(rx{}f{:?})", fn_name, g.local, rx.local.index(), rx.field)
+                })
+                .collect();
+            log::warn!(
+                "[lockgroup-detail] group{} {:?} = {}",
+                group_id,
+                rx_names,
+                match &info[&group[0]].lockguard_ty {
+                    LockGuardTy::StdMutex(_) => "StdMutex",
+                    LockGuardTy::ParkingLotMutex(_) => "ParkingLotMutex",
+                    LockGuardTy::SpinMutex(_) => "SpinMutex",
+                    _ => "RwLock",
+                }
+            );
             match &info[&group[0]].lockguard_ty {
                 LockGuardTy::StdMutex(_)
                 | LockGuardTy::ParkingLotMutex(_)
