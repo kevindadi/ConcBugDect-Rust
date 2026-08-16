@@ -167,10 +167,10 @@ impl PTACallbacks {
 
         let mut reduced_stage_written = false;
         if self.options.dump_options.dump_petri_net {
-            if let Err(err) = pn
-                .builder
-                .write_dot(self.output_directory.join("petrinet_raw.dot"))
-            {
+            if let Err(err) = crate::display::write_petri_net_dot(
+                &net,
+                self.output_directory.join("petrinet_raw.dot"),
+            ) {
                 error!("failed to write raw Petri net dot file: {err}");
             } else {
                 info!("raw petri net dot exported");
@@ -192,21 +192,20 @@ impl PTACallbacks {
                         result.steps.len()
                     );
                     if self.options.dump_options.dump_petri_net {
-                        if let Err(err) = result
-                            .stage_nets
-                            .after_loop
-                            .write_dot(self.output_directory.join("petrinet_reduce_1_loop.dot"))
-                        {
+                        if let Err(err) = crate::display::write_petri_net_dot(
+                            &result.stage_nets.after_loop,
+                            self.output_directory.join("petrinet_reduce_1_loop.dot"),
+                        ) {
                             error!("failed to write stage-1 reduced Petri net: {err}");
                         }
-                        if let Err(err) = result
-                            .stage_nets
-                            .after_sequence
-                            .write_dot(self.output_directory.join("petrinet_reduce_2_sequence.dot"))
-                        {
+                        if let Err(err) = crate::display::write_petri_net_dot(
+                            &result.stage_nets.after_sequence,
+                            self.output_directory.join("petrinet_reduce_2_sequence.dot"),
+                        ) {
                             error!("failed to write stage-2 reduced Petri net: {err}");
                         }
-                        if let Err(err) = result.stage_nets.after_intermediate.write_dot(
+                        if let Err(err) = crate::display::write_petri_net_dot(
+                            &result.stage_nets.after_intermediate,
                             self.output_directory
                                 .join("petrinet_reduce_3_intermediate.dot"),
                         ) {
@@ -237,6 +236,17 @@ impl PTACallbacks {
                         path
                     );
                 }
+            }
+        }
+
+        if self.options.dump_options.dump_petri_net {
+            if let Err(err) = crate::display::write_petri_net_dot(
+                &net,
+                self.output_directory.join("petrinet.dot"),
+            ) {
+                error!("failed to write Petri net dot file: {err}");
+            } else {
+                info!("petri net dot exported");
             }
         }
 
@@ -355,16 +365,6 @@ impl PTACallbacks {
             }
         }
 
-        if dump.dump_petri_net {
-            if let Err(err) = pn
-                .builder
-                .write_dot(self.output_directory.join("petrinet.dot"))
-            {
-                error!("failed to write Petri net dot file: {err}");
-            } else {
-                info!("petri net dot exported");
-            }
-        }
         if dump.dump_unsafe_info {
             todo!()
         }

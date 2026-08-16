@@ -7,6 +7,7 @@ pub mod callback;
 pub mod concurrency;
 pub mod config;
 pub mod detect;
+pub mod display;
 pub mod memory;
 pub mod options;
 pub mod report;
