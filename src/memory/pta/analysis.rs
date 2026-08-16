@@ -50,6 +50,13 @@ pub struct PointerAnalysis<'tcx> {
     built_closures: Vec<(Instance<'tcx>, Context, u32)>,
     /// Monotonic counter for temporary loc ids used by interprocedural binding.
     temp_counter: u32,
+    /// Reverse value-flow edges `src -> dst`: a value at `src` flows to `dst`
+    /// through `Copy` (moves/copies) or is stored into `dst` (a pointee of a
+    /// `Store` address). Ownership-insensitive: moves carry the value just like
+    /// copies, since the Petri net (not Rust move semantics) drives control
+    /// flow. Used by [`Self::stored_into`] to match a value (e.g. the result of
+    /// `Condvar::new()`) to the references that point at its heap slot.
+    value_flow_succ: FxHashMap<LocId, FxHashSet<LocId>>,
 }
 
 impl<'tcx> PointerAnalysis<'tcx> {
@@ -72,6 +79,7 @@ impl<'tcx> PointerAnalysis<'tcx> {
             closure_env_paths: FxHashMap::default(),
             built_closures: Vec::new(),
             temp_counter: 1_000_000,
+            value_flow_succ: FxHashMap::default(),
         }
     }
 
@@ -329,6 +337,30 @@ impl<'tcx> PointerAnalysis<'tcx> {
     /// Solve the accumulated constraints and return a query facade.
     pub fn solve(&mut self) -> PointsToResult {
         let pts = Solver::new(self.arena.loc_count()).solve(&self.constraints, &mut self.arena);
+
+        // Build the reverse value-flow graph once from the constraints and the
+        // solved relation:
+        // - `Copy { dst, src }` carries the value at `src` to `dst` (a move is
+        //   treated like a copy — the Petri net, not move semantics, drives
+        //   control flow, so a moved value keeps flowing).
+        // - `Store { dst, src }` puts `src`'s value into every pointee of
+        //   `dst` (the storage location), resolved from the solved points-to.
+        let mut value_flow_succ: FxHashMap<LocId, FxHashSet<LocId>> = FxHashMap::default();
+        for c in self.constraints.iter() {
+            match *c {
+                Constraint::Copy { dst, src } => {
+                    value_flow_succ.entry(src).or_default().insert(dst);
+                }
+                Constraint::Store { dst, src } => {
+                    for &storage in pts.points_to(dst) {
+                        value_flow_succ.entry(src).or_default().insert(storage);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.value_flow_succ = value_flow_succ;
+
         PointsToResult::new(pts)
     }
 
@@ -473,6 +505,14 @@ impl<'tcx> PointerAnalysis<'tcx> {
             None => {
                 for &id in &base_nodes {
                     keys.insert(self.arena.ci_key(id));
+                    // A value local (no pointees) has no forward points-to;
+                    // its identity is the heap slots it is stored into. Include
+                    // those destinations so e.g. a `Condvar::new()` result can
+                    // be matched to the `&Condvar` reference inside a spawned
+                    // closure that dereferences the shared `Arc`.
+                    if result.points_to(id).is_empty() {
+                        keys.extend(self.stored_into(id));
+                    }
                 }
                 for &p in &base_pointees {
                     keys.insert(self.arena.ci_key(p));
@@ -480,6 +520,27 @@ impl<'tcx> PointerAnalysis<'tcx> {
             }
         }
 
+        keys
+    }
+
+    /// Locations a value at `start` (transitively, through copies/moves) is
+    /// stored into, collapsed to context-insensitive keys. Backed by
+    /// [`Self::value_flow_succ`]; ownership-insensitive (moves == copies).
+    fn stored_into(&self, start: LocId) -> FxHashSet<CiKey> {
+        let mut keys = FxHashSet::default();
+        let mut visited = FxHashSet::default();
+        let mut stack = vec![start];
+        visited.insert(start);
+        while let Some(n) = stack.pop() {
+            if let Some(succs) = self.value_flow_succ.get(&n) {
+                for &s in succs {
+                    if visited.insert(s) {
+                        keys.insert(self.arena.ci_key(s));
+                        stack.push(s);
+                    }
+                }
+            }
+        }
         keys
     }
 

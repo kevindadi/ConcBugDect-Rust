@@ -13,6 +13,7 @@ extern crate rustc_index;
 extern crate rustc_middle;
 
 use rustc_hir::def_id::DefId;
+use rustc_data_structures::fx::FxHashSet;
 use smallvec::SmallVec;
 
 use rustc_middle::mir::{
@@ -62,9 +63,25 @@ pub(crate) fn emit_boxed_value(
         dst: dest,
         obj: heap,
     });
+    // Copy every field-path prefix of the boxed value into the heap, not just
+    // the leaves: a whole-aggregate field (`(Mutex, Condvar).1`) holds the
+    // value that is later referenced from a spawned closure (`&(*arc).1`), so
+    // its identity must reach the corresponding heap slot. Leaf-only copies
+    // leave the intermediate field slot disconnected.
+    let mut seen = FxHashSet::default();
     for &p in leaf_paths {
-        if let (Some(hp), Some(vp)) = (arena.project(heap, p), arena.project(value, p)) {
-            out.add(Constraint::Copy { dst: hp, src: vp });
+        let elems: Vec<ProjElem> = arena.path(p).to_vec();
+        let mut prefix = arena.empty_path();
+        for e in elems {
+            prefix = arena.extend_path(prefix, e);
+            if !seen.insert(prefix) {
+                continue;
+            }
+            if let (Some(hp), Some(vp)) =
+                (arena.project(heap, prefix), arena.project(value, prefix))
+            {
+                out.add(Constraint::Copy { dst: hp, src: vp });
+            }
         }
     }
 }
