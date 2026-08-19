@@ -36,6 +36,11 @@ pub fn run() -> ExitCode {
     if std::env::var("RUSTC_LOG").is_ok() {
         rustc_driver::init_rustc_env_logger(&handler);
     }
+    rustc_driver::install_ice_hook(
+        "https://github.com/local/conc-bug-detector/issues/new",
+        |_| (),
+    );
+
     if std::env::var("PN_LOG").is_ok() {
         let e = env_logger::Env::new()
             .filter("PN_LOG")
