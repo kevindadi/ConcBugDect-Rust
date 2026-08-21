@@ -129,6 +129,8 @@ pub struct KeyApiRegex {
     pub thread_join: Regex,
     pub scope_spwan: Regex,
     pub scope_join: Regex,
+    pub async_spawn: Regex,
+    pub async_join: Regex,
     pub condvar_notify: Regex,
     pub condvar_wait: Regex,
 
@@ -155,6 +157,8 @@ impl KeyApiRegex {
             thread_join: make_regex(&config.thread_join),
             scope_spwan: make_regex(&config.scope_spawn),
             scope_join: make_regex(&config.scope_join),
+            async_spawn: make_regex(&config.async_spawn),
+            async_join: make_regex(&config.async_join),
             condvar_notify: make_regex(&config.condvar_notify),
             condvar_wait: make_regex(&config.condvar_wait),
             channel_send: make_regex(&config.channel_send),

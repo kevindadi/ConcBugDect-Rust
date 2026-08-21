@@ -14,7 +14,11 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 let place_ty = place.ty(self.body, self.tcx).ty;
                 match place_ty.kind() {
                     rustc_middle::ty::TyKind::Closure(def_id, _)
-                    | rustc_middle::ty::TyKind::FnDef(def_id, _) => Some(*def_id),
+                    | rustc_middle::ty::TyKind::FnDef(def_id, _)
+                    | rustc_middle::ty::TyKind::Coroutine(def_id, _) => Some(*def_id),
+                    rustc_middle::ty::TyKind::CoroutineClosure(def_id, _) => {
+                        Some(self.tcx.coroutine_for_closure(*def_id))
+                    }
                     _ => None,
                 }
             }
@@ -24,7 +28,8 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                     Const::Unevaluated(unevaluated, _) => Some(unevaluated.def),
                     _ => {
                         if let rustc_middle::ty::TyKind::Closure(def_id, _)
-                        | rustc_middle::ty::TyKind::FnDef(def_id, _) = constant.ty().kind()
+                        | rustc_middle::ty::TyKind::FnDef(def_id, _)
+                        | rustc_middle::ty::TyKind::Coroutine(def_id, _) = constant.ty().kind()
                         {
                             Some(*def_id)
                         } else {

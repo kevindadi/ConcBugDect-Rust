@@ -39,6 +39,10 @@ pub struct PnConfig {
     pub scope_spawn: Vec<String>,
     #[serde(default = "default_scope_join")]
     pub scope_join: Vec<String>,
+    #[serde(default = "default_async_spawn")]
+    pub async_spawn: Vec<String>,
+    #[serde(default = "default_async_join")]
+    pub async_join: Vec<String>,
     #[serde(default = "default_condvar_notify")]
     pub condvar_notify: Vec<String>,
     #[serde(default = "default_condvar_wait")]
@@ -86,6 +90,8 @@ impl Default for PnConfig {
             thread_join: default_thread_join(),
             scope_spawn: default_scope_spawn(),
             scope_join: default_scope_join(),
+            async_spawn: default_async_spawn(),
+            async_join: default_async_join(),
             condvar_notify: default_condvar_notify(),
             condvar_wait: default_condvar_wait(),
             channel_send: default_channel_send(),
@@ -163,6 +169,23 @@ fn default_scope_join() -> Vec<String> {
         r"std::thread::scope::Scope::join".to_string(),
         r"crossbeam::scope::Scope::join".to_string(),
         r"rayon::scope::Scope::join".to_string(),
+    ]
+}
+
+fn default_async_spawn() -> Vec<String> {
+    vec![
+        r"tokio[:a-zA-Z0-9_#\{\}]*::spawn".to_string(),
+        r"async_std[:a-zA-Z0-9_#\{\}]*::spawn".to_string(),
+        r"smol[:a-zA-Z0-9_#\{\}]*::spawn".to_string(),
+    ]
+}
+
+fn default_async_join() -> Vec<String> {
+    vec![
+        // `.await` on a `JoinHandle` lowers to polling the handle future, so the
+        // join site surfaces as the handle's `Future::poll` in MIR.
+        r"tokio::task::JoinHandle[:a-zA-Z0-9_#\{\}]*::poll".to_string(),
+        r"async_std::task::JoinHandle[:a-zA-Z0-9_#\{\}]*::poll".to_string(),
     ]
 }
 

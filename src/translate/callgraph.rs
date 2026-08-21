@@ -29,6 +29,8 @@ pub enum ThreadControlKind {
     ScopeSpawn,
     ScopeJoin,
     RayonJoin,
+    AsyncSpawn,
+    AsyncJoin,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -57,7 +59,8 @@ impl CallSiteLocation {
                 destination: Some(destination),
                 kind:
                     ThreadControlKind::Spawn
-                    | ThreadControlKind::ScopeSpawn,
+                    | ThreadControlKind::ScopeSpawn
+                    | ThreadControlKind::AsyncSpawn,
                 ..
             } => Some(*destination),
             _ => None,
@@ -200,7 +203,9 @@ impl<'tcx> CallGraph<'tcx> {
                 }
 
                 if let CallSiteLocation::ThreadControl {
-                    kind: ThreadControlKind::Spawn | ThreadControlKind::ScopeSpawn,
+                    kind: ThreadControlKind::Spawn
+                    | ThreadControlKind::ScopeSpawn
+                    | ThreadControlKind::AsyncSpawn,
                     destination: Some(alias_id),
                     ..
                 } = location
@@ -403,11 +408,23 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
 
             if let ty::FnDef(def_id, substs) = *func_ty.kind() {
                 let fn_path = self.tcx.def_path_str(def_id);
-                if let Some(control_kind) =
-                    classify_thread_control(self.tcx, def_id, &fn_path, self.key_api_regex)
-                {
+                let awaited_ty = args
+                    .first()
+                    .and_then(|arg| arg.node.place())
+                    .map(|place| format!("{:?}", place.ty(self.body, self.tcx).ty))
+                    .unwrap_or_default();
+                let control_kind = classify_thread_control(
+                    self.tcx,
+                    def_id,
+                    &fn_path,
+                    self.key_api_regex,
+                )
+                .or_else(|| classify_async_join_by_ty(&fn_path, &awaited_ty));
+                if let Some(control_kind) = control_kind {
                     match control_kind {
-                        ThreadControlKind::Spawn | ThreadControlKind::ScopeSpawn => {
+                        ThreadControlKind::Spawn
+                        | ThreadControlKind::ScopeSpawn
+                        | ThreadControlKind::AsyncSpawn => {
                             if self.handle_spawn_call(
                                 args.as_ref(),
                                 destination,
@@ -423,7 +440,9 @@ impl<'a, 'tcx> Visitor<'tcx> for CallSiteCollector<'a, 'tcx> {
                                 return;
                             }
                         }
-                        ThreadControlKind::Join | ThreadControlKind::ScopeJoin => {
+                        ThreadControlKind::Join
+                        | ThreadControlKind::ScopeJoin
+                        | ThreadControlKind::AsyncJoin => {
                             if let Some(callee) = self.resolve_instance(def_id, substs) {
                                 let alias_id =
                                     AliasId::from_place(self.caller_idx, destination.as_ref());
@@ -511,6 +530,14 @@ pub fn classify_thread_control(
         return Some(ThreadControlKind::ScopeJoin);
     }
 
+    if key_api_regex.async_spawn.is_match(fn_path) {
+        return Some(ThreadControlKind::AsyncSpawn);
+    }
+
+    if key_api_regex.async_join.is_match(fn_path) {
+        return Some(ThreadControlKind::AsyncJoin);
+    }
+
     if key_api_regex.thread_spawn.is_match(fn_path) {
         return Some(ThreadControlKind::Spawn);
     }
@@ -520,6 +547,19 @@ pub fn classify_thread_control(
     }
 
     None
+}
+
+/// Detect an async join (`.await` on a `JoinHandle`) by inspecting the awaited
+/// future's type. The poll / `into_future` callee is usually a blanket `impl`
+/// (`core::future::IntoFuture::into_future`, `Pin<&mut _>::poll`), so its
+/// def-path never mentions `JoinHandle` and the regex classifier misses it.
+pub fn classify_async_join_by_ty(fn_path: &str, awaited_ty: &str) -> Option<ThreadControlKind> {
+    let polls_future = fn_path.contains("::poll") || fn_path.contains("into_future");
+    if polls_future && awaited_ty.contains("JoinHandle") {
+        Some(ThreadControlKind::AsyncJoin)
+    } else {
+        None
+    }
 }
 
 const RAYON_JOIN_PATTERNS: &[&str] = &["rayon_core::join", "rayon::join"];
