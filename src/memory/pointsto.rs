@@ -112,7 +112,7 @@ impl std::convert::From<LockGuardId> for AliasId {
             instance_id: lockguard_id.instance_id,
             local: lockguard_id.local,
             array_index: None,
-            field: None,
+            field: lockguard_id.field,
         }
     }
 }

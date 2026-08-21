@@ -1,6 +1,7 @@
 //! Calls: `handle_call` dispatch, `handle_lock_call`, `handle_normal_call`, `handle_atomic_call`, `handle_condvar_call`, `handle_channel_call`.
 
 use super::BodyToPetriNet;
+use crate::translate::callgraph::InstanceId;
 use crate::{
     concurrency::{
         atomic::{AtomicApi, atomic_api_from_name},
@@ -10,7 +11,7 @@ use crate::{
     util::has_pn_attribute,
 };
 use rustc_hir::def_id::DefId;
-use rustc_middle::mir::{BasicBlock, Operand};
+use rustc_middle::mir::{BasicBlock, Operand, Place, ProjectionElem};
 use rustc_span::Spanned;
 use unipn::pt::TransitionType;
 use unipn::{PlaceId, TransitionId};
@@ -21,6 +22,23 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             .locks()
             .get(&guard_id.get_alias_id())
             .copied()
+    }
+
+    /// Build the guard id for a lock-call destination place, preserving the
+    /// field index so guards stored in a coroutine/struct state projection
+    /// (e.g. `(*_state as variant#N).k`) are distinguished from plain locals.
+    pub(super) fn lockguard_id_for_dest(
+        instance_id: InstanceId,
+        destination: &Place<'tcx>,
+    ) -> LockGuardId {
+        let field = destination.projection.iter().find_map(|elem| {
+            if let ProjectionElem::Field(f, _) = elem {
+                Some(f.as_u32())
+            } else {
+                None
+            }
+        });
+        LockGuardId::with_field(instance_id, destination.local, field)
     }
 
     pub(super) fn handle_lock_call(
@@ -50,7 +68,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             return None;
         }
 
-        let lockguard_id = LockGuardId::new(self.instance_id, destination.local);
+        let lockguard_id = Self::lockguard_id_for_dest(self.instance_id, destination);
         if let Some(guard) = self.lockguards.get(&lockguard_id) {
             let Some(lock_node) = self.lock_node_for_guard(lockguard_id) else {
                 return None;
