@@ -12,15 +12,15 @@ extern crate rustc_hir;
 extern crate rustc_index;
 extern crate rustc_middle;
 
-use rustc_hir::def_id::DefId;
 use rustc_data_structures::fx::FxHashSet;
+use rustc_hir::def_id::DefId;
 use smallvec::SmallVec;
 
-use rustc_middle::mir::{
-    AggregateKind, Body, Const, ConstOperand, LocalKind, Operand, Place, PlaceElem,
-    ProjectionElem, Rvalue, StatementKind, TerminatorKind,
-};
 use rustc_middle::mir::interpret::Scalar;
+use rustc_middle::mir::{
+    AggregateKind, Body, Const, ConstOperand, LocalKind, Operand, Place, PlaceElem, ProjectionElem,
+    Rvalue, StatementKind, TerminatorKind,
+};
 use rustc_middle::ty::{self, GenericArgsRef, Instance, TyCtxt, TypingEnv};
 use rustc_span::Spanned;
 
@@ -300,7 +300,8 @@ struct ConstraintBuilder<'a, 'tcx> {
     /// Closure DefId → environment field paths that were actually captured
     /// (base upvar slot and nested leaf paths of aggregate upvars). Threaded up
     /// to the driver so it can bind the closure body's env slots to the heap.
-    closure_env_paths: &'a mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[FieldPath; 16]>>,
+    closure_env_paths:
+        &'a mut rustc_data_structures::fx::FxHashMap<DefId, SmallVec<[FieldPath; 16]>>,
     /// Call sites awaiting interprocedural resolution by the driver.
     pending: Vec<PendingCall<'tcx>>,
     /// Monotonic counter giving each call site a distinct fresh heap object.
@@ -327,7 +328,8 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         p
     }
 
-    fn proj_kinds(proj: &[PlaceElem<'tcx>]) -> SmallVec<[ProjKind; 4]> {        let mut out: SmallVec<[ProjKind; 4]> = SmallVec::new();
+    fn proj_kinds(proj: &[PlaceElem<'tcx>]) -> SmallVec<[ProjKind; 4]> {
+        let mut out: SmallVec<[ProjKind; 4]> = SmallVec::new();
         for e in proj {
             out.push(match e {
                 ProjectionElem::Field(f, _) => ProjKind::Field(f.as_u32()),
@@ -388,8 +390,10 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             let mut w = self.walk();
             w.fresh()
         };
-        self.constraints
-            .add(Constraint::AddressOf { dst: temp, obj: global });
+        self.constraints.add(Constraint::AddressOf {
+            dst: temp,
+            obj: global,
+        });
         Some(temp)
     }
 
@@ -469,7 +473,9 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             if self.arena.path(p).is_empty() {
                 continue;
             }
-            let dst = self.arena.var_ctx(self.ctx.clone(), self.func, lhs_local, p);
+            let dst = self
+                .arena
+                .var_ctx(self.ctx.clone(), self.func, lhs_local, p);
             let src_slot_path = if has_deref {
                 p
             } else {
@@ -479,7 +485,9 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 }
                 combined
             };
-            let src = self.arena.var_ctx(self.ctx.clone(), self.func, src_local, src_slot_path);
+            let src = self
+                .arena
+                .var_ctx(self.ctx.clone(), self.func, src_local, src_slot_path);
             self.constraints.add(Constraint::Copy { dst, src });
         }
     }
@@ -490,7 +498,22 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         match rvalue {
             Rvalue::Aggregate(box kind, fields) => match kind {
                 AggregateKind::Closure(def_id, substs) => {
-                    self.process_closure_aggregate(lhs_local, *def_id, substs, fields);
+                    let upvar_tys: SmallVec<[ty::Ty<'tcx>; 8]> =
+                        substs.as_closure().upvar_tys().into_iter().collect();
+                    self.process_closure_aggregate(lhs_local, *def_id, &upvar_tys, fields);
+                }
+                AggregateKind::Coroutine(def_id, substs) => {
+                    let upvar_tys: SmallVec<[ty::Ty<'tcx>; 8]> =
+                        substs.as_coroutine().upvar_tys().into_iter().collect();
+                    self.process_closure_aggregate(lhs_local, *def_id, &upvar_tys, fields);
+                }
+                AggregateKind::CoroutineClosure(def_id, substs) => {
+                    let upvar_tys: SmallVec<[ty::Ty<'tcx>; 8]> = substs
+                        .as_coroutine_closure()
+                        .upvar_tys()
+                        .into_iter()
+                        .collect();
+                    self.process_closure_aggregate(lhs_local, *def_id, &upvar_tys, fields);
                 }
                 _ => {
                     self.assign_aggregate(lhs_local, &lhs_proj, kind, fields);
@@ -518,9 +541,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 }
                 self.expand_aggregate_copy(&lhs_proj, lhs_local, op);
             }
-            Rvalue::Cast(_, op, _)
-            | Rvalue::Repeat(op, _)
-            | Rvalue::UnaryOp(_, op) => {
+            Rvalue::Cast(_, op, _) | Rvalue::Repeat(op, _) | Rvalue::UnaryOp(_, op) => {
                 if let Some(v) = self.operand_value(op) {
                     self.store_value(&lhs_proj, lhs_local, v);
                 }
@@ -564,15 +585,13 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
     fn process_closure_aggregate(
         &mut self,
         dst_local: u32,
-        _def_id: DefId,
-        _substs: GenericArgsRef<'tcx>,
+        def_id: DefId,
+        upvar_tys: &[ty::Ty<'tcx>],
         fields: &rustc_index::IndexVec<rustc_abi::FieldIdx, Operand<'tcx>>,
     ) {
-        // 获取闭包的 upvar 类型信息
-        let upvar_tys = _substs.as_closure().upvar_tys();
         let empty = self.arena.empty_path();
 
-        // 为闭包环境创建一个 heap
+        // 为闭包/协程环境创建一个 heap
         self.call_counter += 1;
         let clo_heap = self.arena.heap(
             AllocSite {
@@ -583,13 +602,10 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             empty,
         );
 
-        // Record the def-site environment heap so the closure body's env param
-        // (`_1`) can later be bound to it by the driver. A closure may be
-        // constructed at several sites; all recorded heaps are unioned.
-        self.closure_envs
-            .entry(_def_id)
-            .or_default()
-            .push(clo_heap);
+        // Record the def-site environment heap so the closure/coroutine body's
+        // env param (`_1`) can later be bound to it by the driver. A closure may
+        // be constructed at several sites; all recorded heaps are unioned.
+        self.closure_envs.entry(def_id).or_default().push(clo_heap);
 
         // 字段级 Copy: clo_heap.field_i ⊇ upvar_value_i
         for (i, op) in fields.iter_enumerated() {
@@ -598,7 +614,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             };
             let field_path = self.arena.extend_path(empty, ProjElem::Field(i.as_u32()));
             self.closure_env_paths
-                .entry(_def_id)
+                .entry(def_id)
                 .or_default()
                 .push(field_path);
             if let Some(dst) = self.arena.project(clo_heap, field_path) {
@@ -626,13 +642,13 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                             }
                             let combined = self.extend_path_with(field_path, p);
                             self.closure_env_paths
-                                .entry(_def_id)
+                                .entry(def_id)
                                 .or_default()
                                 .push(combined);
                             if let Some(dst) = self.arena.project(clo_heap, combined) {
-                                let src = self
-                                    .arena
-                                    .var_ctx(self.ctx.clone(), self.func, upvar_local, p);
+                                let src =
+                                    self.arena
+                                        .var_ctx(self.ctx.clone(), self.func, upvar_local, p);
                                 self.constraints.add(Constraint::Copy { dst, src });
                             }
                         }
@@ -803,7 +819,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                 self.constraints.add(Constraint::AddressOf {
                     dst: dest,
                     obj: fresh_heap,
-                });                // The pointer's *internal* pointer fields hold the heap address.
+                }); // The pointer's *internal* pointer fields hold the heap address.
                 // An inlined `Box::into_raw` reads them as `box.0.0` field
                 // accesses, so point every field-slot prefix of the pointer's
                 // type at the heap to make the raw pointer resolve to the shared
