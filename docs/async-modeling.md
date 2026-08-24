@@ -101,22 +101,41 @@ The net has `Mutex_0`/`Mutex_1` and the genuine AB–BA deadlock is reachable.
 
 ## Remaining: coroutine suspend-return control flow
 
-The aliasing fix is complete, but the bug **count** is still inflated (≈16 vs 1).
-The deadlock detector flags every terminal state without `main_end`
-(`detect/deadlock.rs`). The model treats a coroutine **suspend** (`_0 = Poll::Pending;
-return` at the `sleep().await`) as a terminal point — a suspended task has no
-outgoing edge, so "task suspended holding a lock + `main` waiting on `h1.await`"
-counts as a deadlock. The one true AB–BA configuration (both tasks blocked at
-`b.lock`) is among them.
+> **Status (updated): fixed.** The suspend-return and double-join fixes below
+> bring the bench to exactly **one** deadlock (the genuine AB–BA configuration).
 
-A full fix needs coroutine **resume** modeling: a suspend point should let the task
-be re-polled and continue to the post-await code (so a suspended task is *not*
-terminal). That is a separate coroutine control-flow concern from the aliasing fix.
+The aliasing fix was complete but the bug **count** was still inflated (≈16 vs 1).
+The deadlock detector flags every terminal state without `main_end`
+(`detect/deadlock.rs`). Three issues inflated the count; all now fixed:
+
+1. **Coroutine suspend-return** (`_0 = Poll::Pending; return` at `sleep().await`)
+   was treated as a completion, spuriously "finishing" the task while it still
+   held its lock (leaking it). `handle_return` now detects `Poll::Pending` returns
+   in coroutines and resumes to the continuation instead of the function end
+   (`terminator.rs`).
+2. **Coroutine state dispatch**: `bb0`'s switch on the discriminant explored the
+   *resume* states unconditionally, letting `main` reach an `.await` poll without
+   its spawned task running. The dispatch now keeps only the entry state
+   (discriminant 0) — resumptions route through the suspend continuation.
+3. **Double join**: `.await` lowers to both an `into_future` wrapper call and a
+   `poll` call; wiring *both* as `AsyncJoin` consumed the spawned task's end
+   token twice, blocking `main` at the second join. `classify_async_join_by_ty`
+   now only treats the `poll` call as the join.
+
+Result for `bench/deadlock/async-deadlock`:
+
+```
+Result   : BUG FOUND   (mode deadlock)
+Bug count: 1   states=311, edges=754, reachable=311
+```
+
+The single incident is the genuine AB–BA: both tasks blocked at `b.lock` on each
+other's held `Mutex` while `main` waits at `h1.await`.
 
 ## Decision / status
 
 - Guard recognition + spawn/join wiring: **done** and verified on the bench.
 - Cross-instance `Arc<Mutex>` aliasing through coroutine state: **fixed** (coroutine
   env binding), verified on the bench — 4 guards collapse to 2 real locks.
-- Suspend-return control flow (bug count == 1): **open gap** — needs coroutine
-  resume modeling, recorded above.
+- Coroutine suspend/resume + async-join dedup: **done** — the bench reports exactly
+  the one genuine AB–BA deadlock.
