@@ -553,9 +553,11 @@ pub fn classify_thread_control(
 /// future's type. The poll / `into_future` callee is usually a blanket `impl`
 /// (`core::future::IntoFuture::into_future`, `Pin<&mut _>::poll`), so its
 /// def-path never mentions `JoinHandle` and the regex classifier misses it.
+/// Only the `Future::poll` call is the actual join: `.await` lowers to both an
+/// `into_future` wrapper call and a `poll` call, and wiring *both* to the spawned
+/// task's end consumes that token twice, blocking `main` at the second join.
 pub fn classify_async_join_by_ty(fn_path: &str, awaited_ty: &str) -> Option<ThreadControlKind> {
-    let polls_future = fn_path.contains("::poll") || fn_path.contains("into_future");
-    if polls_future && awaited_ty.contains("JoinHandle") {
+    if fn_path.contains("::poll") && awaited_ty.contains("JoinHandle") {
         Some(ThreadControlKind::AsyncJoin)
     } else {
         None
