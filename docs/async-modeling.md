@@ -35,7 +35,10 @@ see `classify_async_join_by_ty` in `callgraph.rs`.
 
 ## The remaining blocker: coroutine upvar layout in the PTA
 
-### Symptom
+> **Status (updated): fixed.** The env-binding fix below landed; the four guards
+> now collapse into the two real locks with the correct AB–BA structure.
+
+### Symptom (before the fix)
 
 `bench/deadlock/async-deadlock` (two tasks, AB–BA lock order, guards held across
 `.await`) should reduce to **one** deadlock (the two tasks deadlock on each other's
@@ -78,22 +81,42 @@ closure shape, so `_19` (the state pointer) ends up with no/incorrect points-to.
 Consequently `collapsed_receiver_points_to` on the receiver `{coroutine, _19, field}`
 is empty and `alias()` falls to `Unlikely`.
 
-### What a real fix needs
+### The fix
 
-Model the coroutine's internal state layout with `tcx.coroutine_layout(def_id)`:
+In the env phase (`analysis.rs`), branch on `tcx.is_coroutine(def_id)`:
 
-1. Allocate a **state heap** for the coroutine value.
-2. Bind the env param `_1`/`_1.0` so `_19` (the state pointer) points to that heap.
-3. Map the `AggregateKind::Coroutine` upvars onto `State.variant#N.k` using the
-   coroutine layout, so `(*_state).variant#3.0` (the Arc receiver) resolves to the
-   right allocation.
+- **closures**: `_1.field_i ⊇ heap.field_i` (unchanged);
+- **coroutines**: bind the state pointer `_1.field_0 → state-heap`
+  (`Pin<&mut State>`, upvars read via `(*_1.0).variant#N.k`).
 
-This is a PTA feature (coroutine/generator state layout), independent of the
-async control-flow modeling above, and carries some regression risk for other
-coroutine/generator handling.
+After the fix the lock groups are:
+
+```
+[lockgroup-detail] group0 ["{closure#0}::task1::__15(rx19fSome(1))", "{closure#0}::task2::__19(rx19fSome(0))"] = ParkingLotMutex
+[lockgroup-detail] group1 ["{closure#0}::task1::__19(rx19fSome(0))", "{closure#0}::task2::__15(rx19fSome(1))"] = ParkingLotMutex
+```
+
+`group0 = task1.b + task2.a` (both l2); `group1 = task1.a + task2.b` (both l1).
+The net has `Mutex_0`/`Mutex_1` and the genuine AB–BA deadlock is reachable.
+
+## Remaining: coroutine suspend-return control flow
+
+The aliasing fix is complete, but the bug **count** is still inflated (≈16 vs 1).
+The deadlock detector flags every terminal state without `main_end`
+(`detect/deadlock.rs`). The model treats a coroutine **suspend** (`_0 = Poll::Pending;
+return` at the `sleep().await`) as a terminal point — a suspended task has no
+outgoing edge, so "task suspended holding a lock + `main` waiting on `h1.await`"
+counts as a deadlock. The one true AB–BA configuration (both tasks blocked at
+`b.lock`) is among them.
+
+A full fix needs coroutine **resume** modeling: a suspend point should let the task
+be re-polled and continue to the post-await code (so a suspended task is *not*
+terminal). That is a separate coroutine control-flow concern from the aliasing fix.
 
 ## Decision / status
 
 - Guard recognition + spawn/join wiring: **done** and verified on the bench.
-- Cross-instance `Arc<Mutex>` aliasing through coroutine state: **open gap** —
-  requires the coroutine-layout PTA work above. Recorded here, not yet implemented.
+- Cross-instance `Arc<Mutex>` aliasing through coroutine state: **fixed** (coroutine
+  env binding), verified on the bench — 4 guards collapse to 2 real locks.
+- Suspend-return control flow (bug count == 1): **open gap** — needs coroutine
+  resume modeling, recorded above.
