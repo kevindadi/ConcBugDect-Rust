@@ -1,0 +1,10 @@
+[package]
+name = "async-deadlock"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+parking_lot = { version = "0.12", features = ["send_guard"] }

@@ -3,7 +3,9 @@
 use super::BodyToPetriNet;
 use crate::{
     memory::pointsto::AliasId,
-    translate::callgraph::{ThreadControlKind, classify_thread_control},
+    translate::callgraph::{
+        ThreadControlKind, classify_async_join_by_ty, classify_thread_control,
+    },
 };
 use unipn::pt::{PtTransition, TransitionType};
 use unipn::TransitionId;
@@ -138,12 +140,19 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         bb_idx: &BasicBlock,
         span: &str,
     ) -> bool {
-        if let Some(kind) = classify_thread_control(
+        let awaited_ty = args
+            .first()
+            .and_then(|arg| arg.node.place())
+            .map(|place| format!("{:?}", place.ty(self.body, self.tcx).ty))
+            .unwrap_or_default();
+        let kind = classify_thread_control(
             self.tcx,
             callee_def_id,
             callee_func_name,
             self.key_api_regex,
-        ) {
+        )
+        .or_else(|| classify_async_join_by_ty(callee_func_name, &awaited_ty));
+        if let Some(kind) = kind {
             match kind {
                 ThreadControlKind::Spawn => {
                     self.handle_spawn(callee_func_name, args, destination, target, *bb_idx, bb_end);
@@ -163,6 +172,16 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 }
                 ThreadControlKind::RayonJoin => {
                     self.handle_rayon_join(callee_func_name, bb_idx, args, target, bb_end, span);
+                    return true;
+                }
+                ThreadControlKind::AsyncSpawn => {
+                    log::info!("[async] AsyncSpawn: {}", callee_func_name);
+                    self.handle_spawn(callee_func_name, args, destination, target, *bb_idx, bb_end);
+                    return true;
+                }
+                ThreadControlKind::AsyncJoin => {
+                    log::info!("[async] AsyncJoin: {} (ty={})", callee_func_name, awaited_ty);
+                    self.handle_join(callee_func_name, args, target, *bb_idx, bb_end);
                     return true;
                 }
             }
@@ -278,6 +297,13 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 closure_end,
                 self.spawn_handle_end
             );
+        } else {
+            let first_ty = args
+                .first()
+                .and_then(|a| a.node.place())
+                .map(|p| format!("{:?}", p.ty(self.body, self.tcx).ty))
+                .unwrap_or_default();
+            log::warn!("[async] spawn: failed to resolve future from arg (ty={})", first_ty);
         }
 
         if let Some(transition) = self.net.transition_mut(bb_end) {

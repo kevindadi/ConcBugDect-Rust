@@ -4,13 +4,12 @@
 
 use super::BodyToPetriNet;
 use crate::{
-    concurrency::blocking::{LockGuardId, LockGuardTy},
-    memory::pointsto::AliasId,
+    concurrency::blocking::LockGuardTy, memory::pointsto::AliasId,
     translate::mir_utils::rvalue_read_places,
 };
-use unipn::pt::{PtTransition, TransitionType, UnsafeOp};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_middle::mir::{BasicBlock, BasicBlockData, Rvalue};
+use unipn::pt::{PtTransition, TransitionType, UnsafeOp};
 
 impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
     pub(super) fn handle_drop(
@@ -30,7 +29,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             .add_input_arc(self.bb_graph.last(*bb_idx), bb_end, 1);
 
         if !bb.is_cleanup {
-            let lockguard_id = LockGuardId::new(self.instance_id, place.local);
+            let lockguard_id = Self::lockguard_id_for_dest(self.instance_id, place);
 
             if self.lockguards.get(&lockguard_id).is_some() {
                 let lock_alias = lockguard_id.get_alias_id();

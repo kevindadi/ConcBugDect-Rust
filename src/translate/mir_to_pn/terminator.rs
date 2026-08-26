@@ -110,8 +110,19 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         targets: &SwitchTargets,
         name: &str,
     ) {
+        // In a coroutine body, `bb0` is the state-machine dispatch (switch on the
+        // discriminant). Its *resume* states are only valid after a previous
+        // suspend; exploring them from the initial poll lets e.g. `main` reach an
+        // `.await` poll without its spawned task ever running, producing bogus
+        // terminal states. The suspend fix already routes resumptions through the
+        // continuation, so here we only keep the entry state (discriminant 0).
+        let is_coroutine_dispatch = bb_idx.index() == 0
+            && self.tcx.is_coroutine(self.instance.def_id());
         let mut t_num = 1u8;
         for t in targets.all_targets() {
+            if is_coroutine_dispatch && t_num > 1 {
+                break;
+            }
             if self.exclude_bb.contains(&t.index()) {
                 continue;
             }
@@ -132,6 +143,19 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
     }
 
     pub(super) fn handle_return(&mut self, bb_idx: BasicBlock, name: &str) {
+        // A coroutine's `Return` with `Poll::Pending` is a suspend point, not a
+        // completion: the task stays alive holding its locks and later resumes
+        // (the `Poll::Ready` return is the real completion). Connecting a suspend
+        // to the function end would spuriously "complete" the task and leak the
+        // locks it still holds, so instead we resume to the continuation block
+        // (the poll-switch's other target).
+        if self.tcx.is_coroutine(self.instance.def_id()) && self.block_sets_poll_pending(bb_idx) {
+            if let Some(cont) = self.find_suspend_continuation(bb_idx) {
+                self.handle_fallthrough(bb_idx, &cont, name, "suspend");
+            }
+            return;
+        }
+
         let return_node = self
             .functions_map()
             .get(&self.instance.def_id())
@@ -201,5 +225,39 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
             "panic",
             TransitionType::Return(self.instance_id.index())
         );
+    }
+
+    /// Whether the return block sets `_0` to `Poll::Pending` (a coroutine
+    /// suspend) rather than `Poll::Ready` (completion).
+    fn block_sets_poll_pending(&self, bb_idx: BasicBlock) -> bool {
+        let bb = &self.body.basic_blocks[bb_idx];
+        for stmt in &bb.statements {
+            if let rustc_middle::mir::StatementKind::Assign(box (place, _)) = &stmt.kind {
+                if place.local.index() == 0 {
+                    return format!("{:?}", stmt.kind).contains("Pending");
+                }
+            }
+        }
+        false
+    }
+
+    /// Find the block a coroutine suspend resumes to: the poll switch that
+    /// leads into the suspend block has the Ready/continuation as another
+    /// target.
+    fn find_suspend_continuation(&self, suspend_bb: BasicBlock) -> Option<BasicBlock> {
+        for (_bb_idx, bb) in self.body.basic_blocks.iter_enumerated() {
+            if let Some(term) = &bb.terminator {
+                if let rustc_middle::mir::TerminatorKind::SwitchInt { targets, .. } = &term.kind {
+                    if targets.all_targets().contains(&suspend_bb) {
+                        for t in targets.all_targets() {
+                            if *t != suspend_bb && !self.body.basic_blocks[*t].is_cleanup {
+                                return Some(*t);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }

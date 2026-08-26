@@ -143,7 +143,24 @@ impl<'tcx> PointerAnalysis<'tcx> {
             if let Some(heaps) = heaps {
                 let empty = self.arena.empty_path();
                 let env_node = self.arena.var_ctx(ctx.clone(), func, 1, empty);
+                let is_coroutine = self.tcx.is_coroutine(inst.def_id());
                 for heap in heaps {
+                    if is_coroutine {
+                        // Async-fn coroutine: `_1` is `Pin<&mut State>` and the
+                        // captured upvars are read through the state pointer
+                        // `_1.0` (deref → `(*_1.0).variant#N.k`), not through
+                        // `_1.field_i` like a closure. Point the state pointer
+                        // `_1.0` at the state heap where the upvars were stored
+                        // by the coroutine aggregate.
+                        let state_ptr_path =
+                            self.arena.extend_path(empty, ProjElem::Field(0));
+                        let state_ptr = self
+                            .arena
+                            .var_ctx(ctx.clone(), func, 1, state_ptr_path);
+                        self.constraints
+                            .add(Constraint::AddressOf { dst: state_ptr, obj: heap });
+                        continue;
+                    }
                     self.constraints
                         .add(Constraint::AddressOf { dst: env_node, obj: heap });
                     // Bind the base upvar slots (`_1.field_i`); the MAX probing

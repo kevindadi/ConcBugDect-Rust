@@ -16,15 +16,35 @@ use crate::translate::callgraph::InstanceId;
 pub struct LockGuardId {
     pub instance_id: InstanceId,
     pub local: Local,
+    /// Field index when the guard is stored inside a coroutine/struct state
+    /// projection (e.g. `(*_state as variant#N).k`). `None` for a plain local.
+    pub field: Option<u32>,
 }
 
 impl LockGuardId {
     pub fn new(instance_id: InstanceId, local: Local) -> Self {
-        Self { instance_id, local }
+        Self {
+            instance_id,
+            local,
+            field: None,
+        }
+    }
+
+    pub fn with_field(instance_id: InstanceId, local: Local, field: Option<u32>) -> Self {
+        Self {
+            instance_id,
+            local,
+            field,
+        }
     }
 
     pub fn get_alias_id(&self) -> AliasId {
-        AliasId::new(self.instance_id, self.local)
+        AliasId {
+            instance_id: self.instance_id,
+            local: self.local,
+            array_index: None,
+            field: self.field,
+        }
     }
 }
 
@@ -317,10 +337,6 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
     /// determined are simply left out — the consumer falls back to guard
     /// aliasing for those, preserving the previous (sound) behavior.
     fn resolve_lock_objects(&mut self) {
-        if self.lockguards.is_empty() {
-            return;
-        }
-
         // A guard local can be defined in several places: a loop-carried guard
         // is assigned by the original `lock().unwrap()` *and* re-assigned from
         // `Condvar::wait(...)` every iteration. A single-def map would lose the
@@ -372,9 +388,6 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                     ..
                 } = &term.kind
                 {
-                    if !destination.projection.is_empty() {
-                        continue;
-                    }
                     let Some((def_id, substs)) = func.const_fn_def() else {
                         continue;
                     };
@@ -409,32 +422,48 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                                 receiver_local = r_local;
                                 receiver_field = receiver_field.or(r_field);
                             }
-                            def_source
-                                .entry(destination.local)
-                                .or_default()
-                                .push(DefSource::LockAcquire {
-                                    local: receiver_local,
-                                    field: receiver_field,
-                                });
-                        } else if ownership::is_wrapper_extract(def_id, self.tcx)
-                            || ownership::is_arc_rc_deref(def_id, substs, self.tcx)
-                            || self
-                                .lockguards
-                                .contains_key(&LockGuardId::new(self.instance_id, destination.local))
+                            if destination.projection.is_empty() {
+                                def_source.entry(destination.local).or_default().push(
+                                    DefSource::LockAcquire {
+                                        local: receiver_local,
+                                        field: receiver_field,
+                                    },
+                                );
+                            } else {
+                                // Guards held across a suspend point are stored in a
+                                // coroutine state field (e.g. `(*_state as variant#N).k`),
+                                // so the lock destination is a projection, not a plain
+                                // local. Register the guard directly with its field index
+                                // and receiver.
+                                self.register_projected_guard(
+                                    destination,
+                                    receiver_local,
+                                    receiver_field,
+                                    term.source_info.span,
+                                );
+                            }
+                        } else if destination.projection.is_empty()
+                            && (ownership::is_wrapper_extract(def_id, self.tcx)
+                                || ownership::is_arc_rc_deref(def_id, substs, self.tcx)
+                                || self.lockguards.contains_key(&LockGuardId::new(
+                                    self.instance_id,
+                                    destination.local,
+                                )))
                         {
                             // `Result::unwrap()`, `Arc/Rc::deref()`, and any other
                             // guard-producing call (e.g. custom `HandyRwLock::rl/wl`
                             // wrappers) do not change which lock object a guard
                             // protects; they only re-express the receiver through a
                             // temporary local, so forward arg0.
-                            def_source
-                                .entry(destination.local)
-                                .or_default()
-                                .push(DefSource::Forward {
+                            def_source.entry(destination.local).or_default().push(
+                                DefSource::Forward {
                                     local,
                                     projection: projection.to_vec(),
-                                });
-                        } else if ownership::is_condvar_wait(def_id, self.tcx) {
+                                },
+                            );
+                        } else if destination.projection.is_empty()
+                            && ownership::is_condvar_wait(def_id, self.tcx)
+                        {
                             // `Condvar::wait(&self, guard)` releases the lock on
                             // entry and re-acquires it on return, so the returned
                             // guard protects the *same* mutex as the passed-in
@@ -449,13 +478,12 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                                     _ => None,
                                 })
                             {
-                                def_source
-                                    .entry(destination.local)
-                                    .or_default()
-                                    .push(DefSource::Forward {
+                                def_source.entry(destination.local).or_default().push(
+                                    DefSource::Forward {
                                         local: g_local,
                                         projection: g_proj,
-                                    });
+                                    },
+                                );
                             }
                         }
                     }
@@ -463,16 +491,20 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
             }
         }
 
-        let guard_locals: Vec<Local> = self.lockguards.keys().map(|g| g.local).collect();
-        for guard_local in guard_locals {
+        let guard_ids: Vec<LockGuardId> = self.lockguards.keys().copied().collect();
+        for guard_id in guard_ids {
+            // Projected guards (coroutine-state fields) already have their
+            // receiver recorded directly at the lock-acquire site.
+            if guard_id.field.is_some() {
+                continue;
+            }
             if let Some((local, field)) = Self::resolve_guard_receiver(
                 &def_source,
                 &self.lockguards,
                 self.instance_id,
-                guard_local,
+                guard_id.local,
                 &mut FxHashSet::default(),
             ) {
-                let guard_id = LockGuardId::new(self.instance_id, guard_local);
                 let alias_id = AliasId {
                     instance_id: self.instance_id,
                     local,
@@ -482,6 +514,49 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                 self.lock_objects.insert(guard_id, alias_id);
             }
         }
+    }
+
+    /// Register a lock guard whose destination is a projection (a field of a
+    /// coroutine/struct state such as `(*_state as variant#N).k`). The receiver
+    /// (the lock object) has already been resolved by the caller, so record the
+    /// guard → receiver mapping directly.
+    fn register_projected_guard(
+        &mut self,
+        destination: &rustc_middle::mir::Place<'tcx>,
+        receiver_local: Local,
+        receiver_field: Option<u32>,
+        span: Span,
+    ) {
+        let field = destination.projection.iter().find_map(|elem| {
+            if let rustc_middle::mir::ProjectionElem::Field(f, _) = elem {
+                Some(f.as_u32())
+            } else {
+                None
+            }
+        });
+        let dest_ty = destination.ty(self.body, self.tcx).ty;
+        let Some(lockguard_ty) = LockGuardTy::from_local_ty(dest_ty, self.tcx) else {
+            return;
+        };
+        let guard_id = LockGuardId::with_field(self.instance_id, destination.local, field);
+        self.lockguards
+            .insert(guard_id, LockGuardInfo::new(lockguard_ty, span));
+        self.lock_objects.insert(
+            guard_id,
+            AliasId {
+                instance_id: self.instance_id,
+                local: receiver_local,
+                array_index: None,
+                field: receiver_field,
+            },
+        );
+        log::debug!(
+            "[lock-acquire] projected guard local={:?} field={:?} -> receiver local={:?} field={:?}",
+            destination.local,
+            field,
+            receiver_local,
+            receiver_field
+        );
     }
 
     /// Normalize a `lock()` receiver local back to its base lock object through
@@ -538,7 +613,10 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                         return Some((*base, *field));
                     }
                 }
-                DefSource::Forward { local: src, projection } => {
+                DefSource::Forward {
+                    local: src,
+                    projection,
+                } => {
                     if visiting.insert(*src) {
                         if let Some((l, f)) = Self::resolve_guard_receiver(
                             def_source,
@@ -549,8 +627,7 @@ impl<'a, 'b, 'tcx> BlockingCollector<'a, 'b, 'tcx> {
                         ) {
                             let field = f.or_else(|| {
                                 projection.iter().find_map(|elem| {
-                                    if let rustc_middle::mir::ProjectionElem::Field(f, _) = elem
-                                    {
+                                    if let rustc_middle::mir::ProjectionElem::Field(f, _) = elem {
                                         Some(f.as_u32())
                                     } else {
                                         None
