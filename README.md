@@ -1,6 +1,6 @@
 # ConcBugDect-Rust
 
-ConcBugDect-Rust is a Petri-net-based static analyzer for Rust concurrency bugs. It runs as a Rust compiler driver, collects MIR-level information during compilation, translates the analyzed program into a Petri net, builds a state graph, and reports potential concurrency problems.
+ConcBugDect-Rust is a Petri-net-based static analyzer for Rust concurrency bugs. It runs as a Rust compiler driver, collects MIR-level information during compilation, translates the analyzed program into a Petri net, builds a state graph, and reports potential concurrency problems. The old version repository is located at https://github.com/kevindadi/RustPTA.
 
 The crate name is `conc_bug_detector`. The installed binaries remain `pn` and `cargo-pn` (`cargo pn`).
 
