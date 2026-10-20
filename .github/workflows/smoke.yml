@@ -1,0 +1,23 @@
+name: Smoke
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    # rust-toolchain.toml pins the nightly toolchain + rustc-dev components;
+    # rustup installs them on first use.
+    - name: Build pn
+      run: cargo build --bin pn --verbose
+    - name: Run pipeline smoke tests (async + sync regression baselines)
+      run: ./scripts/smoke.sh

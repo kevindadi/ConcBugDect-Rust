@@ -151,6 +151,11 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         // (the poll-switch's other target).
         if self.tcx.is_coroutine(self.instance.def_id()) && self.block_sets_poll_pending(bb_idx) {
             if let Some(cont) = self.find_suspend_continuation(bb_idx) {
+                log::debug!(
+                    "[async] structured suspend detection matched bb{} -> continuation bb{}",
+                    bb_idx.index(),
+                    cont.index()
+                );
                 self.handle_fallthrough(bb_idx, &cont, name, "suspend");
             }
             return;
@@ -229,16 +234,96 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 
     /// Whether the return block sets `_0` to `Poll::Pending` (a coroutine
     /// suspend) rather than `Poll::Ready` (completion).
+    ///
+    /// Structured detection (no debug-string rendering): the `Pending` variant
+    /// of the body's `Poll`-shaped return type is located by variant name, and
+    /// every `_0`-writing statement is matched against it —
+    /// `SetDiscriminant { _0, v }`, `_0 = Aggregate(Adt(.., v, ..))`, or
+    /// `_0 = const` (variant `DefId` for unevaluated consts, discriminant bits
+    /// for evaluated ones). The last recognized `_0` write in the block decides.
     fn block_sets_poll_pending(&self, bb_idx: BasicBlock) -> bool {
+        use rustc_middle::mir::{AggregateKind, Operand, RETURN_PLACE, Rvalue, StatementKind};
+
+        let Some(pending_idx) = self.poll_pending_variant() else {
+            return false;
+        };
+
         let bb = &self.body.basic_blocks[bb_idx];
+        let mut sets_pending = false;
         for stmt in &bb.statements {
-            if let rustc_middle::mir::StatementKind::Assign(box (place, _)) = &stmt.kind {
-                if place.local.index() == 0 {
-                    return format!("{:?}", stmt.kind).contains("Pending");
+            match &stmt.kind {
+                StatementKind::SetDiscriminant {
+                    place,
+                    variant_index,
+                } if place.local == RETURN_PLACE && place.projection.is_empty() => {
+                    sets_pending = *variant_index == pending_idx;
                 }
+                StatementKind::Assign(box (place, rvalue))
+                    if place.local == RETURN_PLACE && place.projection.is_empty() =>
+                {
+                    let variant = match rvalue {
+                        Rvalue::Use(Operand::Constant(constant), _) => {
+                            self.const_poll_variant(constant.const_)
+                        }
+                        Rvalue::Aggregate(box AggregateKind::Adt(_, variant_index, _, _, _), _) => {
+                            Some(*variant_index)
+                        }
+                        _ => None,
+                    };
+                    if let Some(variant) = variant {
+                        sets_pending = variant == pending_idx;
+                    }
+                }
+                _ => {}
             }
         }
-        false
+        sets_pending
+    }
+
+    /// The `Pending` variant of the body's return type when it is a
+    /// `Poll`-shaped enum (has both `Ready` and `Pending` variants).
+    fn poll_pending_variant(&self) -> Option<rustc_abi::VariantIdx> {
+        let adt_def = self.body.return_ty().ty_adt_def()?;
+        if !adt_def.is_enum() {
+            return None;
+        }
+        let mut pending = None;
+        let mut has_ready = false;
+        for (idx, variant) in adt_def.variants().iter_enumerated() {
+            match variant.name.as_str() {
+                "Pending" => pending = Some(idx),
+                "Ready" => has_ready = true,
+                _ => {}
+            }
+        }
+        has_ready.then_some(pending).flatten()
+    }
+
+    /// Resolve a constant `Poll` value to its enum variant without rendering:
+    /// fieldless variants may stay unevaluated and reference the variant's
+    /// `DefId`; evaluated consts carry the discriminant bits, matched against
+    /// the ADT's discriminant table.
+    fn const_poll_variant(
+        &self,
+        constant: rustc_middle::mir::Const<'tcx>,
+    ) -> Option<rustc_abi::VariantIdx> {
+        use rustc_middle::mir::Const;
+
+        let adt_def = self.body.return_ty().ty_adt_def()?;
+        match constant {
+            Const::Unevaluated(unevaluated, _) => adt_def
+                .variants()
+                .iter_enumerated()
+                .find(|(_, variant)| variant.def_id == unevaluated.def)
+                .map(|(idx, _)| idx),
+            evaluated => {
+                let scalar = evaluated.try_to_scalar_int()?;
+                let bits = scalar.to_bits(scalar.size());
+                adt_def
+                    .discriminants(self.tcx)
+                    .find_map(|(idx, discr)| (discr.val == bits).then_some(idx))
+            }
+        }
     }
 
     /// Find the block a coroutine suspend resumes to: the poll switch that

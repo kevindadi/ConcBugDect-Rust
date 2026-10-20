@@ -8,3 +8,4 @@ bench/**
 
 .vscode
 .DS_Store
+tmp/
