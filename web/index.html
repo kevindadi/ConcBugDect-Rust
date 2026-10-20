@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ConcBugDect-Rust — a Petri net lesson</title>
+    <meta name="description" content="How ConcBugDect-Rust turns Rust MIR into a Petri net and looks for deadlock, data race, and atomicity violation.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23e15a2a'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,560;1,9..144,520&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="top">
+        <div class="wrap">
+            <div class="brand">conc_bug_detector <span>lesson</span></div>
+            <nav aria-label="Sections">
+                <a href="#firing">Firing</a>
+                <a href="#deadlock">Deadlock</a>
+                <a href="#datarace">Data race</a>
+                <a href="#atomicity">Atomicity</a>
+                <a href="#pipeline">Pipeline</a>
+                <a href="#framework">Framework</a>
+                <a href="#outcomes">Outcomes</a>
+            </nav>
+        </div>
+    </header>
+    <main id="main">
+        <div class="wrap">
+            <header class="hero">
+                <p class="kicker">ConcBugDect-Rust</p>
+                <h1>What the analyzer sees</h1>
+                <p class="dek">A Petri net lesson for developers who have not used one. Places, tokens, and a single firing — then a deadlock, a data race, and an atomicity violation, each visible on a small net.</p>
+                <ul class="legend">
+                    <li><span class="swatch place" aria-hidden="true"></span> place</li>
+                    <li><span class="swatch trans" aria-hidden="true"></span> transition</li>
+                    <li><span class="swatch token" aria-hidden="true"></span> token</li>
+                </ul>
+            </header>
+
+            <section class="lesson" id="firing">
+                <p class="plate-no">Plate 01</p>
+                <h2>A place, a transition, one firing</h2>
+                <div class="prose">
+                    <p>A <strong>place</strong> is a circle. It stands for a condition or a resource: this thread is ready, this mutex is free, this function has ended.</p>
+                    <p>A <strong>token</strong> is the dot inside a place. If the dot is there, the condition holds. These pictures use one token on each marked place.</p>
+                    <p>A <strong>transition</strong> is the bar. It is an action. It may <strong>fire</strong> only when every input place holds the tokens that arc requires. Firing removes those tokens and adds tokens to the output places. The bar does not keep a token.</p>
+                    <p>The net below is the shape of a mutex lock in this analyzer. <code>TransitionType::Lock</code> consumes one token from the mutex place (<code>src/translate/mir_to_pn/calls.rs</code>).</p>
+                </div>
+                <div class="plate" id="plate-firing"></div>
+            </section>
+
+            <section class="lesson" id="bugs">
+                <p class="plate-no">Plate 02–04</p>
+                <h2>Three bugs, three readings of the net</h2>
+                <div class="prose">
+                    <p>Deadlock and data race are read off one marking. Atomicity is read off a path of firings. The pictures use the same enabling rule as the analyzer. They are teaching nets, not a dump of <code>petrinet.dot</code>.</p>
+                </div>
+            </section>
+
+            <section class="lesson" id="deadlock">
+                <h2>Deadlock: AB-BA</h2>
+                <div class="prose">
+                    <p>Two threads, two mutexes. Thread 1 locks A, then B. Thread 2 locks B, then A. Each <code>Lock</code> needs a token from the thread's current place and one token from that mutex place.</p>
+                    <p><code>DeadlockDetector</code> walks the state graph (<code>src/detect/deadlock.rs</code>). A state with no outgoing edge is a deadlock when it is not a normal exit. Normal exit means a place whose name contains <code>main_end</code> holds a token. The entry function's end place is named <code>{function}_end</code> (<code>src/translate/petri_net.rs</code>).</p>
+                    <p>If no terminal state is found, the detector also reports a stable cycle in which some lock stays disabled on every state of the cycle, and not every lock is blocked. The animation is the terminal case.</p>
+                </div>
+                <div class="plate" id="plate-deadlock"></div>
+            </section>
+
+            <section class="lesson" id="datarace">
+                <h2>Data race: one location, two enabled accesses</h2>
+                <div class="prose">
+                    <p><code>DataRaceDetector</code> looks at the outgoing edges of each state (<code>src/detect/datarace.rs</code>). It keeps <code>UnsafeRead</code>, <code>UnsafeWrite</code>, and each variable inside an <code>UnsafeAccess</code>, and groups them by <code>location_id</code>. Two different sites on that id are a race when at least one is a write. A read paired only with a read is not reported.</p>
+                    <p>In the net below, L is that alias. It is drawn as a label, not as a place. Neither transition consumes a token from L, so both can be enabled in the same marking.</p>
+                </div>
+                <div class="plate" id="plate-race"></div>
+            </section>
+
+            <section class="lesson" id="atomicity">
+                <h2>Atomicity: a remote store in the middle</h2>
+                <div class="prose">
+                    <p><code>AtomicityViolationDetector</code> walks paths of the same state graph (<code>src/detect/atomicity_violation.rs</code>). A witness is three events on one alias. The start and the end belong to thread i. The middle event is a store from some other thread, strictly between them. <code>AtomicLoad</code> is a load. <code>AtomicStore</code> and <code>AtomicCmpXchg</code> are stores.</p>
+                    <ul>
+                        <li><strong>AV1</strong> — load, remote store, store</li>
+                        <li><strong>AV2</strong> — store, remote store, load</li>
+                        <li><strong>AV3</strong> — load, remote store, load</li>
+                    </ul>
+                    <p>Ordering between atomic operations is carried by ordering-segment places in the real net. The witness search itself matches kind, thread, and alias. The picture shows that order: two threads, and no mutex token between them, so the remote store can fire in the middle.</p>
+                </div>
+                <div class="seg" id="av-switch" role="tablist" aria-label="Atomicity witness">
+                    <button type="button" data-av="AV1" aria-selected="true">AV1 · load, store, store</button>
+                    <button type="button" data-av="AV2" aria-selected="false">AV2 · store, store, load</button>
+                    <button type="button" data-av="AV3" aria-selected="false">AV3 · load, store, load</button>
+                </div>
+                <div class="plate" id="plate-atom"></div>
+            </section>
+
+            <section class="lesson" id="pipeline">
+                <p class="plate-no">Plate 05</p>
+                <h2>From MIR to a detector</h2>
+                <div class="prose">
+                    <p><code>pn</code> (<code>src/bin/pn.rs</code>) is a rustc driver. <code>conc_bug_detector::run</code> starts the compiler. <code>PTACallbacks::analyze_with_pta</code> in <code>src/callback.rs</code> runs the stages below, in this order. <code>--mode pointsto</code> returns before the three detectors.</p>
+                </div>
+                <div class="plate" id="plate-pipeline"></div>
+            </section>
+
+            <section class="lesson" id="framework">
+                <p class="plate-no">Plate 06</p>
+                <h2>Where the code sits</h2>
+                <div class="prose">
+                    <p>Translation builds the net. The <code>unipn</code> crate stores the net, reduces it, and builds the state graph. Detectors only read that graph.</p>
+                </div>
+                <div class="plate" id="plate-arch"></div>
+                <p class="callout">The README table lists <code>src/net</code> and <code>src/analysis</code>. Those directories are not in this repository. Net types, reduction, and <code>StateGraph</code> come from <code>unipn</code>.</p>
+            </section>
+
+            <section class="lesson" id="outcomes">
+                <p class="plate-no">Plate 07</p>
+                <h2>What each picture is for</h2>
+                <div class="outcomes">
+                    <article class="outcome dead">
+                        <h3>Deadlock</h3>
+                        <p>The AB-BA firing ends in a marking with no enabled transition and no token in <code>main_end</code>, which is the terminal state <code>DeadlockDetector</code> reports.</p>
+                        <button type="button" data-replay="deadlock" data-target="deadlock">Show that marking</button>
+                    </article>
+                    <article class="outcome race">
+                        <h3>Data race</h3>
+                        <p>One marking enables <code>UnsafeWrite</code> and <code>UnsafeRead</code> on the same <code>location_id</code>, which is the conflicting pair <code>DataRaceDetector</code> reports.</p>
+                        <button type="button" data-replay="race" data-target="datarace">Show that marking</button>
+                    </article>
+                    <article class="outcome atom">
+                        <h3>Atomicity violation</h3>
+                        <p>A state-graph trace where another thread's store sits strictly between one thread's load/store events on the same alias is the AV1, AV2, or AV3 witness <code>AtomicityViolationDetector</code> reports.</p>
+                        <button type="button" data-replay="atom" data-av="AV1" data-target="atomicity">Show the AV1 witness</button>
+                    </article>
+                </div>
+            </section>
+
+            <footer class="foot">
+                <p>This page does not run the analyzer. It is a lesson about the nets the analyzer builds. Crate <code>conc_bug_detector</code>, binaries <code>pn</code> and <code>cargo pn</code>.</p>
+                <p>MIT License. Copyright (c) 2025 Kaiwen Zhang. See <a href="LICENSE">LICENSE</a>.</p>
+            </footer>
+        </div>
+    </main>
+    <script src="app.js"></script>
+</body>
+</html>
