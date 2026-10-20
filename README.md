@@ -4,6 +4,8 @@ ConcBugDect-Rust is a Petri-net-based static analyzer for Rust concurrency bugs.
 
 The crate name is `conc_bug_detector`. The installed binaries remain `pn` and `cargo-pn` (`cargo pn`).
 
+A static English lesson for the Petri net, the three bug patterns, and the pipeline lives in [`web/`](web/README.md). GitHub Pages uses branch `main` and folder `/web`.
+
 ## Features
 
 - Deadlock detection (`--mode deadlock`, the default).
@@ -205,6 +207,7 @@ This repository is a single Cargo package (not a workspace).
 | `detect.sh`           | Batch helper for analyzing crates under a directory.              |
 | `bench/`              | Deadlock, data-race, and atomicity-violation benchmark crates.    |
 | `docs/`               | Design notes (e.g. CFG→Petri control-flow completeness).          |
+| `web/`                | Static explainer site (GitHub Pages folder `/web`).               |
 
 ## Known limitations
 
