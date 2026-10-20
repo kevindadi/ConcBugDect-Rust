@@ -121,6 +121,15 @@ Default flags when none are given:
 -m deadlock --pn-analysis-dir=<repo>/tmp
 ```
 
+### Run smoke tests
+
+`./scripts/smoke.sh` builds `pn`, analyzes the benchmark crates, and asserts each deadlock report's `Bug count` (and the lock-group count for async cases). It guards the async modeling (`bench/deadlock/async-deadlock` expects 1 bug / 2 lock groups; `bench/deadlock/async-no-deadlock` expects 0 bugs / 1 lock group) and the sync regression baselines. The same script runs in CI (`.github/workflows/smoke.yml`).
+
+```bash
+./scripts/smoke.sh                        # builds pn, runs all cases
+PN_BIN=target/debug/pn ./scripts/smoke.sh  # reuse an existing binary
+```
+
 ## Common flags
 
 | Flag                                                        | Meaning                                                                                             |

@@ -591,12 +591,12 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
     ) {
         let empty = self.arena.empty_path();
 
-        // 为闭包/协程环境创建一个 heap
+        // Create a heap for the closure/coroutine environment
         self.call_counter += 1;
         let clo_heap = self.arena.heap(
             AllocSite {
                 func: self.func,
-                bb: 0, // 闭包定义不是 call site,用 0
+                bb: 0, // A closure definition is not a call site; use 0
                 idx: self.call_counter,
             },
             empty,
@@ -607,7 +607,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
         // be constructed at several sites; all recorded heaps are unioned.
         self.closure_envs.entry(def_id).or_default().push(clo_heap);
 
-        // 字段级 Copy: clo_heap.field_i ⊇ upvar_value_i
+        // Field-level Copy: clo_heap.field_i ⊇ upvar_value_i
         for (i, op) in fields.iter_enumerated() {
             let Some(value) = self.operand_value(op) else {
                 continue;
@@ -655,7 +655,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                     }
                 }
             }
-            // 如果 upvar 是引用类型,还需要 AddressOf
+            // If the upvar is a reference type, also add an AddressOf constraint
             let upvar_ty = upvar_tys.get(i.as_usize());
             if let Some(upvar_ty) = upvar_ty {
                 if upvar_ty.is_ref() {
@@ -674,7 +674,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
             }
         }
 
-        // 将 dst_local (闭包变量) 指向这个 heap
+        // Point dst_local (the closure variable) at this heap
         let dst_slot = self
             .arena
             .var_ctx(self.ctx.clone(), self.func, dst_local, empty);
@@ -757,7 +757,7 @@ impl<'a, 'tcx> ConstraintBuilder<'a, 'tcx> {
                     self.arena
                         .var_ctx(self.ctx.clone(), self.func, u32::MAX - i as u32, empty);
 
-                // 字段级 Copy: clo_heap.field_j ⊇ upvar_value_j
+                // Field-level Copy: clo_heap.field_j ⊇ upvar_value_j
                 for (j, upvar_loc) in arg_nodes.iter().enumerate() {
                     if let Some(upvar_loc) = upvar_loc {
                         let field_path = self.arena.extend_path(empty, ProjElem::Field(j as u32));
