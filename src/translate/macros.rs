@@ -1,10 +1,7 @@
-//! Translation macros.
+//! Naming sugar only; construction goes through `NetBuilder` methods.
 //!
-//! - `transition_name!`: unified transition/place naming.
-//! - `bb_place!`: create BasicBlock places.
-//! - `add_fallthrough_transition!`: fallthrough transition + arcs.
-//! - `add_terminal_transition!`: terminal transition + arcs.
-//! - `add_wait_ret_subnet!`: wait place + ret transition subnet.
+//! `transition_name!` builds `{name}_{bb}_{kind}` labels. The other macros
+//! only place the arcs the caller already chose; they do not decide control flow.
 
 /// Build `{name}_{bb_idx}_{kind}` transition/place names.
 /// Optional suffix: `transition_name!(name, bb_idx, kind, suffix)`.
@@ -18,18 +15,23 @@ macro_rules! transition_name {
     };
 }
 
-/// Create a BasicBlock place (`tokens = 0`, `capacity = 1`).
+/// Create a BasicBlock place (`tokens = 0`, unbounded capacity).
+///
+/// Execution-position places must be unbounded: a function body (and every BB
+/// place in it) is shared by all of its call sites, so two concurrent calls
+/// deposit two tokens in the same place. Capacity 1 would silently *drop* the
+/// second token (`produce_outputs_clamped`), stranding one caller forever;
+/// an unbounded place queues the invocations instead.
 #[macro_export]
 macro_rules! bb_place {
     ($net:expr, $name:expr, $span:expr) => {{
-        let place = unipn::pt::PtPlace::new(
+        $net.add_place(
             $name,
             0,
-            1,
-            unipn::pt::PlaceType::BasicBlock,
-            $span.into(),
-        );
-        $net.add_place(place)
+            usize::MAX,
+            unipn::PlaceClass::Control(unipn::ControlSub::BasicBlock),
+            $span,
+        )
     }};
 }
 
@@ -39,30 +41,25 @@ macro_rules! bb_place {
 macro_rules! add_fallthrough_transition {
     ($self:expr, $bb_idx:expr, $name:expr, $kind:expr, $trans_type:expr, $target:expr) => {{
         let t_name = $crate::transition_name!($name, $bb_idx, $kind);
-        let t = unipn::pt::PtTransition::new_with_transition_type(t_name, $trans_type);
-        let t_id = $self.net.add_transition(t);
-        $self
-            .net
-            .add_input_arc($self.bb_graph.last($bb_idx), t_id, 1);
-        $self
-            .net
-            .add_output_arc($self.bb_graph.start(*$target), t_id, 1);
+        let span = $self.bb_span($bb_idx);
+        let t_id = $self.new_transition(t_name, $trans_type, $bb_idx, span);
+        $self.net.arc_in($self.bb_graph.last($bb_idx), t_id, 1);
+        $self.net.arc_out($self.bb_graph.start(*$target), t_id, 1);
         t_id
     }};
 }
 
-/// Terminal transition wiring `last(bb_idx) -> t -> entry_exit.1`.
+/// Terminal transition wiring `last(bb_idx) -> t -> frame_exit`, the current
+/// frame's *own* function-end place (`entry_exit.1` only for `main`).
 /// Returns `TransitionId`.
 #[macro_export]
 macro_rules! add_terminal_transition {
     ($self:expr, $bb_idx:expr, $name:expr, $kind:expr, $trans_type:expr) => {{
         let t_name = $crate::transition_name!($name, $bb_idx, $kind);
-        let t = unipn::pt::PtTransition::new_with_transition_type(t_name, $trans_type);
-        let t_id = $self.net.add_transition(t);
-        $self
-            .net
-            .add_input_arc($self.bb_graph.last($bb_idx), t_id, 1);
-        $self.net.add_output_arc($self.entry_exit.1, t_id, 1);
+        let span = $self.bb_span($bb_idx);
+        let t_id = $self.new_transition(t_name, $trans_type, $bb_idx, span);
+        $self.net.arc_in($self.bb_graph.last($bb_idx), t_id, 1);
+        $self.net.arc_out($self.frame_exit, t_id, 1);
         t_id
     }};
 }
@@ -74,12 +71,11 @@ macro_rules! add_terminal_transition {
 macro_rules! add_wait_ret_subnet {
     ($self:expr, $name:expr, $bb_idx:expr, $kind_wait:expr, $kind_ret:expr, $trans_type:expr, $span:expr, $bb_end:expr) => {{
         let wait_name = $crate::transition_name!($name, $bb_idx, $kind_wait);
-        let wait_place = $crate::bb_place!($self.net, wait_name, $span);
+        let wait_place = $crate::bb_place!($self.net, wait_name, $span.clone());
         let ret_name = $crate::transition_name!($name, $bb_idx, $kind_ret);
-        let ret_t = unipn::pt::PtTransition::new_with_transition_type(ret_name, $trans_type);
-        let ret_id = $self.net.add_transition(ret_t);
-        $self.net.add_output_arc(wait_place, $bb_end, 1);
-        $self.net.add_input_arc(wait_place, ret_id, 1);
+        let ret_id = $self.new_transition(ret_name, $trans_type, $bb_idx, $span);
+        $self.net.arc_out(wait_place, $bb_end, 1);
+        $self.net.arc_in(wait_place, ret_id, 1);
         (wait_place, ret_id)
     }};
 }

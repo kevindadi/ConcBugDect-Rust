@@ -14,6 +14,8 @@ reduce_net = true
 por_enabled = false
 # Also translate functions using locks/atomics/semaphores/condvars and their callees.
 translate_concurrent_roots = true
+# Encode Mutex<bool> condvar loop guards as boolean data predicates (data.<var>.true / data.<var>.false).
+bool_guard_abstraction = true
 
 # ===== Alias analysis =====
 # Policy when alias results are Unknown: conservative (default, treat as Possibly) / optimistic (treat as Unlikely).
@@ -24,37 +26,8 @@ pta_k = 1
 # ===== Report =====
 report_level = "developer"   # developer / research
 
-# ===== Concurrency API identification (regex lists) =====
-# Note: regexes contain `\{` / `\}` escapes which are invalid in TOML basic
-# strings, so they must be written as single-quoted literal strings.
-# Thread spawn / join
-thread_spawn = [
-    'rstd::thread[:a-zA-Z0-9_#\{\}]*::spawn',
-    'rayon::spawn',
-]
-thread_join = [
-    'rstd::thread[:a-zA-Z0-9_#\{\}]*::join',
-    'rstd::thread::JoinHandle::try_join',
-]
-# Scoped thread spawn / join
-scope_spawn = [
-    'rstd::thread::scoped[:a-zA-Z0-9_#\{\}]*::spawn',
-    'rstd::thread::scope::Scope::spawn',
-    'rcrossbeam::scope::Scope::spawn',
-    'rayon::scope::Scope::spawn',
-]
-scope_join = [
-    'rstd::thread::scoped[:a-zA-Z0-9_#\{\}]*::join',
-    'rstd::thread::scope::Scope::join',
-    'rcrossbeam::scope::Scope::join',
-    'rayon::scope::Scope::join',
-]
-# Condition variables (std Condvar delegates to the internal poison::condvar impl in MIR)
-condvar_notify = ['rstd::sync::(?:Condvar|poison::condvar)[:a-zA-Z0-9_#\{\}]*::notify']
-condvar_wait  = ['rstd::sync::(?:Condvar|poison::condvar)[:a-zA-Z0-9_#\{\}]*::wait']
-# Channels
-channel_send = ['rmpsc[:a-zA-Z0-9_#\{\}]*::send']
-channel_recv = ['rmpsc[:a-zA-Z0-9_#\{\}]*::recv']
-# Atomic operations
-atomic_load  = ['ratomic[:a-zA-Z0-9]*::load']
-atomic_store = ['ratomic[:a-zA-Z0-9]*::store']
+# Synchronization effects come from the built-in table in
+# `src/concurrency/sync_registry.rs` (std / parking_lot / crossbeam / spin).
+# `op` is omitted so that table is used. Names identify effects. They never
+# skip translation of a function.
+[sync]
