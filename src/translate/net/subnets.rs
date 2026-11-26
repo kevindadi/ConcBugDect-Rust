@@ -19,10 +19,11 @@ use std::path::Path;
 
 use serde::Serialize;
 use unipn::net::ArcDir;
-use unipn::pt::{PtNet, ResourceKind, TransitionType};
+use unipn::pt::{PtNet, TransitionType};
 use unipn::{ControlSub, PlaceClass, PlaceId, TransitionId, TransitionRole};
 
 use crate::translate::lower::facts::TranslationProvenance;
+use crate::translate::net::{ResourceKind, infer_resource_kind};
 
 pub const SCHEMA: &str = "pn-subnets/2";
 
@@ -124,7 +125,7 @@ impl SubNetContext {
                                 .to_string(),
                                 place: arc.place,
                             };
-                            if net.resource_kind(arc.place).is_some_and(is_holdable)
+                            if infer_resource_kind(net, arc.place).is_some_and(is_holdable)
                                 && (transition.kind.is_acquire() || transition.kind.is_release())
                             {
                                 hold_ports.push(port.clone());
@@ -141,8 +142,7 @@ impl SubNetContext {
                             if is_spawn && is_function_start(place) {
                                 spawn_ports.push(arc.place);
                             }
-                            if is_spawn && net.is_thread_place(arc.place) && thread_place.is_none()
-                            {
+                            if is_spawn && is_thread_place(place) && thread_place.is_none() {
                                 thread_place = Some(arc.place);
                             }
                         }
@@ -200,7 +200,7 @@ fn frame_owns(origin_fn: &str, frame_name: &str) -> bool {
 }
 
 fn is_resource(place: &unipn::net::Place<unipn::pt::PtPlaceKind>) -> bool {
-    matches!(place.kind.place_type, PlaceClass::Resource(_))
+    matches!(place.kind.place_type, PlaceClass::Resource(())) && !place.name.starts_with("data.")
 }
 
 fn is_function_start(place: &unipn::net::Place<unipn::pt::PtPlaceKind>) -> bool {
@@ -210,8 +210,15 @@ fn is_function_start(place: &unipn::net::Place<unipn::pt::PtPlaceKind>) -> bool 
     )
 }
 
+fn is_thread_place(place: &unipn::net::Place<unipn::pt::PtPlaceKind>) -> bool {
+    matches!(
+        place.kind.place_type,
+        PlaceClass::Control(ControlSub::FunctionEnd)
+    ) || (!is_resource(place) && !is_function_start(place) && place.name.contains("_thread_"))
+}
+
 fn port_kind(net: &PtNet, place: PlaceId, weight: usize) -> String {
-    let labeled = match net.resource_kind(place) {
+    let labeled = match infer_resource_kind(net, place) {
         Some(ResourceKind::Mutex) => "mutex",
         Some(ResourceKind::RwLock) => "rwlock",
         Some(ResourceKind::Condvar) => "condvar",
@@ -397,7 +404,6 @@ mod tests {
     fn project_twice_writes_identical_subnets() {
         use crate::translate::lower::facts::{TransOrigin, TranslationProvenance};
         use crate::translate::net::{NetBuilder, TransitionKind};
-        use unipn::ResourceKind;
 
         let mut net = NetBuilder::new();
         let start = net.marked_place(
@@ -416,16 +422,16 @@ mod tests {
             usize::MAX,
         );
         let thread = net.place(
-            PlaceClass::Control(ControlSub::ThreadPlace),
+            PlaceClass::Control(ControlSub::FunctionEnd),
             "crate::worker_thread_0",
             1,
         );
-        let mutex = net.place(PlaceClass::Resource(ResourceKind::Mutex), "Mutex_0", 1);
+        let mutex = net.place(PlaceClass::Resource(()), "Mutex_0", 1);
         net.set_tokens(mutex, 1);
-        let rwlock = net.place(PlaceClass::Resource(ResourceKind::RwLock), "RwLock_0", 1);
+        let rwlock = net.place(PlaceClass::Resource(()), "RwLock_0", 1);
         net.set_tokens(rwlock, 1);
-        let condvar = net.place(PlaceClass::Resource(ResourceKind::Condvar), "Condvar_0", 1);
-        let atomic = net.place(PlaceClass::Resource(ResourceKind::Atomic), "Atomic_0", 1);
+        let condvar = net.place(PlaceClass::Resource(()), "Condvar_0", 1);
+        let atomic = net.place(PlaceClass::Resource(()), "Atomic_0", 1);
         net.set_tokens(atomic, 1);
 
         let lock = net.transition(

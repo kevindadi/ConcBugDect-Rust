@@ -5,7 +5,7 @@ use crate::analysis::memory::pointsto::AliasId;
 use crate::analysis::primitives::atomic::AtomicApi;
 use crate::analysis::primitives::atomic::AtomicOrdering;
 use crate::translate::net::NetBuilder;
-use crate::translate::net::{ControlSub, PlaceClass, PlaceId, ResourceKind};
+use crate::translate::net::{ControlSub, PlaceClass, PlaceId};
 use crate::translate::net::{TransitionId, TransitionType};
 use rustc_middle::mir::{BasicBlock, Operand};
 use rustc_span::Spanned;
@@ -286,7 +286,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
         }
 
         let place_id = self.net.marked_place(
-            PlaceClass::Resource(ResourceKind::Atomic),
+            PlaceClass::Resource(()),
             "SeqCst_Global",
             1,
         );
@@ -343,14 +343,12 @@ pub(super) fn wire_atomic_token(
 #[cfg(test)]
 mod tests {
     use super::wire_atomic_token;
-    use crate::translate::net::{
-        NetBuilder, PlaceClass, ResourceKind, TransitionKind, TransitionType,
-    };
+    use crate::translate::net::{NetBuilder, PlaceClass, TransitionKind, TransitionType};
 
     #[test]
     fn rmw_takes_the_atomic_token_and_puts_it_back() {
         let mut net = NetBuilder::new();
-        let place = net.marked_place(PlaceClass::Resource(ResourceKind::Atomic), "Atomic(1,2)", 1);
+        let place = net.marked_place(PlaceClass::Resource(()), "Atomic(1,2)", 1);
         let transition = net.transition(TransitionKind::new(TransitionType::Normal), "rmw");
         wire_atomic_token(&mut net, place, transition);
         assert!(net.fans_out(place));

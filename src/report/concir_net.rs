@@ -10,12 +10,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use unipn::analysis::pt::reachability::StateGraph;
 use unipn::net::{ArcDir, Marking, PlaceClass, PlaceId, TransitionId};
-use unipn::pt::{PtNet, ResourceKind, TransitionType};
+use unipn::pt::{PtNet, TransitionType};
 
 use crate::report::events;
 use crate::translate::construct::PetriNet;
 use crate::translate::lower::facts::TranslationProvenance;
 use crate::translate::net::subnets::SubNetContext;
+use crate::translate::net::{ResourceKind, infer_resource_kind};
 
 /// Schema identifier for the ConcIR implementation sync Petri-net export.
 pub const SCHEMA: &str = "concir-impl-net/1";
@@ -58,6 +59,26 @@ pub struct CodegenHole {
     pub req: Vec<String>,
 }
 
+/// One domain type-hole entry from ConcIR `codegen.json` (`src/domain.rs`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct CodegenTypeHole {
+    pub id: String,
+    #[serde(default)]
+    pub type_name: String,
+    #[serde(default)]
+    pub module: Option<String>,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<usize>,
+    #[serde(default)]
+    pub start_line: Option<usize>,
+    #[serde(default)]
+    pub end_line: Option<usize>,
+    #[serde(default)]
+    pub req: Vec<String>,
+}
+
 /// Inclusive 1-based line range for a filled hole in a source file.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct HoleRange {
@@ -67,8 +88,8 @@ pub struct HoleRange {
     pub end_line: usize,
 }
 
-/// Subset of ConcIR `codegen.json` (plus optional `hole_ranges` produced after
-/// filling holes) consumed by `--codegen-map`.
+/// Subset of ConcIR `codegen.json` (plus optional `hole_ranges` / `type_hole_ranges`
+/// produced after filling holes) consumed by `--codegen-map`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CodegenMap {
     #[serde(default)]
@@ -79,6 +100,10 @@ pub struct CodegenMap {
     pub holes: Vec<CodegenHole>,
     #[serde(default)]
     pub hole_ranges: BTreeMap<String, HoleRange>,
+    #[serde(default)]
+    pub type_holes: Vec<CodegenTypeHole>,
+    #[serde(default)]
+    pub type_hole_ranges: BTreeMap<String, HoleRange>,
 }
 
 impl CodegenMap {
@@ -88,10 +113,21 @@ impl CodegenMap {
             .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
     }
 
-    /// All effective hole ranges: explicit `hole_ranges` entries take priority,
-    /// falling back to `start_line..=end_line` or single `line` from `holes`.
+    /// All effective hole and type-hole ranges: explicit `hole_ranges` and
+    /// `type_hole_ranges` entries take priority, falling back to `start_line..=end_line`
+    /// or single `line` from `holes` (defaulting to `src/main.rs`) and `type_holes`
+    /// (defaulting to `src/domain.rs`).
     pub fn effective_hole_ranges(&self) -> Vec<(String, HoleRange)> {
         let mut ranges: BTreeMap<String, HoleRange> = self.hole_ranges.clone();
+        for (id, range) in &self.type_hole_ranges {
+            ranges.entry(id.clone()).or_insert_with(|| {
+                let mut cloned = range.clone();
+                if cloned.file.is_empty() {
+                    cloned.file = "src/domain.rs".to_string();
+                }
+                cloned
+            });
+        }
         for hole in &self.holes {
             if ranges.contains_key(&hole.id) {
                 continue;
@@ -118,6 +154,40 @@ impl CodegenMap {
             {
                 ranges.insert(
                     hole.id.clone(),
+                    HoleRange {
+                        file,
+                        start_line: line,
+                        end_line: line,
+                    },
+                );
+            }
+        }
+        for th in &self.type_holes {
+            if ranges.contains_key(&th.id) {
+                continue;
+            }
+            let file = th
+                .file
+                .clone()
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| "src/domain.rs".to_string());
+            if let (Some(start), Some(end)) = (th.start_line, th.end_line)
+                && start > 0
+                && end >= start
+            {
+                ranges.insert(
+                    th.id.clone(),
+                    HoleRange {
+                        file,
+                        start_line: start,
+                        end_line: end,
+                    },
+                );
+            } else if let Some(line) = th.line
+                && line > 0
+            {
+                ranges.insert(
+                    th.id.clone(),
                     HoleRange {
                         file,
                         start_line: line,
@@ -236,6 +306,10 @@ pub struct ConcirNetInputs<'a> {
     pub codegen_map: Option<&'a CodegenMap>,
     /// Optional `PlaceId.index() -> struct field name` hints extracted from MIR.
     pub place_field_hints: &'a BTreeMap<usize, String>,
+    /// Optional `--focus-module <MODULE>` for modular refinement projection.
+    pub focus_module: Option<&'a str>,
+    /// Optional `(fn_def_path, span)` pairs for `unsafe` blocks/places discovered in MIR.
+    pub unsafe_spans: &'a [(String, String)],
 }
 
 /// Structured hole-purity violation recorded in `concir-impl-net/1`.
@@ -255,6 +329,7 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
     let sg = inputs.state_graph;
     let prov = inputs.provenance;
     let codegen_map = inputs.codegen_map;
+    let focus_module = inputs.focus_module.filter(|m| !m.is_empty());
 
     // Precompute canonical resource names for every place and identify lock places
     // (for `held_locks` per reachable state).
@@ -263,7 +338,7 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
         .map(|idx| {
             let pid = PlaceId::from(idx);
             let raw_name = net.place(pid).map(|p| p.name.as_str()).unwrap_or("");
-            let rk = net.resource_kind(pid);
+            let rk = infer_resource_kind(net, pid);
             let hint = inputs.place_field_hints.get(&idx).map(String::as_str);
             codegen_map
                 .and_then(|map| map.resolve_resource(raw_name, hint, rk))
@@ -288,8 +363,9 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
         })
         .collect();
 
-    // 2. Transitions + sync-in-hole purity violations.
+    // 2. Transitions + sync-in-hole & unsafe-in-hole purity violations.
     let mut purity_violations: Vec<PurityViolation> = Vec::new();
+    let mut seen_unsafe_violations: BTreeSet<(String, String)> = BTreeSet::new();
     let transitions: Vec<Value> = (0..net.num_transitions())
         .map(|idx| {
             let tid = TransitionId::from(idx);
@@ -300,8 +376,8 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
                 None => (String::new(), None, String::new()),
             };
 
-            let (observable, op, custom_hint) = classify_transition(net, tid, prov);
-            let resource = if observable {
+            let (raw_observable, op, custom_hint) = classify_transition(net, tid, prov);
+            let resource = if raw_observable {
                 resolve_transition_resource(
                     net,
                     tid,
@@ -314,7 +390,7 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
             };
 
             let hole_id = codegen_map.and_then(|map| map.hole_for_span(&span));
-            if observable && let Some(ref hid) = hole_id {
+            if raw_observable && let Some(ref hid) = hole_id {
                 purity_violations.push(PurityViolation {
                     hole_id: hid.clone(),
                     fn_def_path: fn_def_path.clone(),
@@ -326,6 +402,30 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
                     ),
                 });
             }
+
+            if let Some(map) = codegen_map {
+                collect_transition_unsafe_violations(
+                    &trans.kind.transition_type,
+                    &fn_def_path,
+                    &span,
+                    hole_id.as_deref(),
+                    map,
+                    &mut seen_unsafe_violations,
+                    &mut purity_violations,
+                );
+            }
+
+            // Modular refinement projection (`--focus-module <MOD>`):
+            // Observable transitions outside `<MOD>` (whose `fn_def_path` is not in
+            // `<MOD>` and whose target resource is not owned by `<MOD>::`) are
+            // projected to silent (`observable = false`).
+            let observable = if raw_observable && let Some(fmod) = focus_module {
+                fn_in_module(&fn_def_path, fmod, inputs.crate_name)
+                    || span_in_module(&span, fmod)
+                    || resource_in_module(&resource, fmod)
+            } else {
+                raw_observable
+            };
 
             let inputs_arcs: Vec<Value> = net
                 .arcs_of(tid, ArcDir::Input)
@@ -352,9 +452,30 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
         })
         .collect();
 
-    // 3. Cut loop back-edges inside hole ranges -> purity violations.
+    // 3. Cut loop back-edges and MIR unsafe spans inside hole / type-hole ranges.
     if let Some(map) = codegen_map {
         collect_loop_purity_violations(prov, map, &mut purity_violations);
+        for (fn_def_path, span) in inputs.unsafe_spans {
+            if let Some(hid) = map.hole_for_span(span)
+                && seen_unsafe_violations.insert((hid.clone(), span.clone()))
+            {
+                purity_violations.push(PurityViolation {
+                    hole_id: hid.clone(),
+                    fn_def_path: fn_def_path.clone(),
+                    kind: "unsafe_in_hole".to_string(),
+                    op: "unsafe_block".to_string(),
+                    span: span.clone(),
+                    message: format!(
+                        "unsafe operation originates inside hole `{hid}` at {span}"
+                    ),
+                });
+            }
+        }
+    }
+    if let Some(fmod) = focus_module {
+        purity_violations.retain(|pv| {
+            purity_violation_matches_focus(pv, fmod, codegen_map, inputs.crate_name)
+        });
     }
     purity_violations.sort_by(|a, b| {
         a.hole_id
@@ -430,7 +551,7 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
     }
     let completed_functions: Vec<String> = completed.into_iter().collect();
 
-    json!({
+    let mut report = json!({
         "schema": SCHEMA,
         "crate": inputs.crate_name,
         "entry_mode": inputs.entry_mode,
@@ -441,7 +562,11 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
         "edges": edges,
         "purity_violations": purity_violations,
         "completed_functions": completed_functions,
-    })
+    });
+    if let Some(fmod) = focus_module {
+        report["focus_module"] = json!(fmod);
+    }
+    report
 }
 
 /// Write `concir-impl-net/1` JSON to `path`, creating parent directories as needed.
@@ -505,7 +630,7 @@ pub fn collect_place_field_hints(petri: &PetriNet<'_, '_>) -> BTreeMap<usize, St
                 continue;
             }
             let body = tcx.instance_mir(inst.def);
-            if let Some(field_name) = trace_local_adt_field_name(body, local) {
+            if let Some(field_name) = trace_local_adt_field_name(tcx, body, local) {
                 hints.insert(place.index(), field_name);
                 break;
             }
@@ -515,7 +640,60 @@ pub fn collect_place_field_hints(petri: &PetriNet<'_, '_>) -> BTreeMap<usize, St
     hints
 }
 
+/// Collect `(fn_def_path, span)` pairs for unsafe blocks and non-parameter raw-pointer
+/// locals in the target crate so `build_concir_net` can attribute `unsafe` operations
+/// inside holes and `type_holes` (`src/domain.rs`, `src/<mod>.rs`).
+pub fn collect_unsafe_spans(petri: &PetriNet<'_, '_>, crate_name: &str) -> Vec<(String, String)> {
+    use crate::analysis::unsafe_scan::UnsafeAnalyzer;
+
+    let analyzer = UnsafeAnalyzer::new(petri.tcx(), petri.callgraph(), crate_name.to_string());
+    let (unsafe_info, _) = analyzer.analyze();
+
+    let mut spans: BTreeSet<(String, String)> = BTreeSet::new();
+    for (def_id, info) in &unsafe_info {
+        let fn_name = crate::util::format_name(*def_id);
+        for block in &info.unsafe_blocks {
+            if !block.span.is_empty() {
+                spans.insert((fn_name.clone(), block.span.clone()));
+            }
+        }
+        for place in info.unsafe_places.values() {
+            if !place.is_param && !place.span.is_empty() {
+                spans.insert((fn_name.clone(), place.span.clone()));
+            }
+        }
+    }
+    spans.into_iter().collect()
+}
+
+fn static_operand_name<'tcx>(
+    tcx: rustc_middle::ty::TyCtxt<'tcx>,
+    operand: &rustc_middle::mir::Operand<'tcx>,
+) -> Option<String> {
+    use rustc_middle::mir::Operand;
+    use rustc_middle::mir::interpret::{GlobalAlloc, Scalar};
+
+    let Operand::Constant(const_op) = operand else {
+        return None;
+    };
+    let scalar = const_op.const_.try_to_scalar()?;
+    let Scalar::Ptr(ptr, _) = scalar else {
+        return None;
+    };
+    let alloc_id = ptr.provenance.alloc_id();
+    if let GlobalAlloc::Static(def_id) = tcx.global_alloc(alloc_id) {
+        let def_path = tcx.def_path_str(def_id);
+        return def_path
+            .rsplit("::")
+            .next()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+    }
+    None
+}
+
 fn trace_local_adt_field_name<'tcx>(
+    tcx: rustc_middle::ty::TyCtxt<'tcx>,
     body: &rustc_middle::mir::Body<'tcx>,
     start: rustc_middle::mir::Local,
 ) -> Option<String> {
@@ -534,6 +712,11 @@ fn trace_local_adt_field_name<'tcx>(
                 let (dst, rvalue) = &**boxed;
                 if !dst.projection.is_empty() || dst.local != current {
                     continue;
+                }
+                if let Rvalue::Use(op @ Operand::Constant(_), _) = rvalue
+                    && let Some(static_name) = static_operand_name(tcx, op)
+                {
+                    return Some(static_name);
                 }
                 let src_place = match rvalue {
                     Rvalue::Ref(_, _, p)
@@ -556,12 +739,17 @@ fn trace_local_adt_field_name<'tcx>(
                 } = &term.kind
                 && destination.projection.is_empty()
                 && destination.local == current
-                && let Some(p) = args.first().and_then(|a| a.node.place())
+                && let Some(first_arg) = args.first()
             {
-                if let Some(name) = BodyToPetriNet::place_adt_field_name(body, &p) {
-                    return Some(name);
+                if let Some(static_name) = static_operand_name(tcx, &first_arg.node) {
+                    return Some(static_name);
                 }
-                next_local = Some(p.local);
+                if let Some(p) = first_arg.node.place() {
+                    if let Some(name) = BodyToPetriNet::place_adt_field_name(body, &p) {
+                        return Some(name);
+                    }
+                    next_local = Some(p.local);
+                }
             }
         }
         current = next_local?;
@@ -581,15 +769,23 @@ pub fn classify_transition(
     match &trans.kind.transition_type {
         TransitionType::Lock(_) => (true, "mutex_lock", None),
         TransitionType::Unlock(place_idx) => {
-            if net.resource_kind(PlaceId::from(*place_idx)) == Some(ResourceKind::RwLock) {
-                (true, "rwlock_unlock", None)
+            if infer_resource_kind(net, PlaceId::from(*place_idx)) == Some(ResourceKind::RwLock) {
+                let is_write_unlock = net
+                    .arcs_of(tid, ArcDir::Output)
+                    .any(|arc| arc.place.index() == *place_idx && arc.weight > 1);
+                if is_write_unlock {
+                    (true, "rwlock_write_unlock", None)
+                } else {
+                    (true, "rwlock_read_unlock", None)
+                }
             } else {
                 (true, "mutex_unlock", None)
             }
         }
-        TransitionType::RwLockRead(_) => (true, "rwlock_read", None),
-        TransitionType::RwLockWrite(_) => (true, "rwlock_write", None),
-        TransitionType::DropRead(_) | TransitionType::DropWrite(_) => (true, "rwlock_unlock", None),
+        TransitionType::RwLockRead(_) => (true, "rwlock_read_lock", None),
+        TransitionType::RwLockWrite(_) => (true, "rwlock_write_lock", None),
+        TransitionType::DropRead(_) => (true, "rwlock_read_unlock", None),
+        TransitionType::DropWrite(_) => (true, "rwlock_write_unlock", None),
         TransitionType::Wait => (true, "condvar_wait", None),
         TransitionType::Notify(_) => {
             if is_notify_all(trans.name.as_str(), tid, provenance) {
@@ -632,7 +828,8 @@ fn is_notify_all(
     false
 }
 
-/// Recognize ConcIR `cir_trace::Semaphore` / `cir_trace::Channel` summary transitions.
+/// Recognize ConcIR `cir_trace::Semaphore` / `cir_trace::Channel` / `cir_trace::rwlock_*`
+/// summary transitions.
 fn classify_custom_concir_sync(name: &str) -> (bool, &'static str, Option<String>) {
     if let Some(rest) = name.strip_prefix("cir_sync::") {
         let mut parts = rest.splitn(3, "::");
@@ -644,6 +841,10 @@ fn classify_custom_concir_sync(name: &str) -> (bool, &'static str, Option<String
             "sem_release" => Some("sem_release"),
             "channel_send" => Some("channel_send"),
             "channel_recv" => Some("channel_recv"),
+            "rwlock_read_lock" => Some("rwlock_read_lock"),
+            "rwlock_read_unlock" => Some("rwlock_read_unlock"),
+            "rwlock_write_lock" => Some("rwlock_write_lock"),
+            "rwlock_write_unlock" => Some("rwlock_write_unlock"),
             _ => None,
         };
         if let Some(op) = canonical {
@@ -668,6 +869,18 @@ fn classify_custom_concir_sync(name: &str) -> (bool, &'static str, Option<String
     if name.contains("Channel::recv") || name.contains("::recv_sid") {
         return (true, "channel_recv", None);
     }
+    if name.contains("cir_trace::rwlock_read_lock") || name.contains("::rwlock_read_lock") {
+        return (true, "rwlock_read_lock", None);
+    }
+    if name.contains("cir_trace::rwlock_read_unlock") || name.contains("::rwlock_read_unlock") {
+        return (true, "rwlock_read_unlock", None);
+    }
+    if name.contains("cir_trace::rwlock_write_lock") || name.contains("::rwlock_write_lock") {
+        return (true, "rwlock_write_lock", None);
+    }
+    if name.contains("cir_trace::rwlock_write_unlock") || name.contains("::rwlock_write_unlock") {
+        return (true, "rwlock_write_unlock", None);
+    }
     (false, "tau", None)
 }
 
@@ -691,7 +904,7 @@ fn resolve_transition_resource(
     let place_name = touched_place
         .and_then(|pid| net.place(pid))
         .map(|p| p.name.as_str());
-    let place_kind = touched_place.and_then(|pid| net.resource_kind(pid));
+    let place_kind = touched_place.and_then(|pid| infer_resource_kind(net, pid));
     let field_hint = touched_place
         .and_then(|pid| place_field_hints.get(&pid.index()))
         .map(String::as_str);
@@ -745,7 +958,7 @@ fn transition_resource_place(net: &PtNet, tid: TransitionId) -> Option<PlaceId> 
         TransitionType::Wait => {
             // Prefer the Condvar input arc over any re-acquired Mutex input arc.
             net.arcs_of(tid, ArcDir::Input)
-                .find(|arc| net.resource_kind(arc.place) == Some(ResourceKind::Condvar))
+                .find(|arc| infer_resource_kind(net, arc.place) == Some(ResourceKind::Condvar))
                 .or_else(|| {
                     net.arcs_of(tid, ArcDir::Input)
                         .find(|arc| net.is_resource(arc.place))
@@ -756,7 +969,7 @@ fn transition_resource_place(net: &PtNet, tid: TransitionId) -> Option<PlaceId> 
         | TransitionType::AtomicStore(..)
         | TransitionType::AtomicCmpXchg(..) => net
             .arcs_of(tid, ArcDir::Input)
-            .find(|arc| net.resource_kind(arc.place) == Some(ResourceKind::Atomic))
+            .find(|arc| infer_resource_kind(net, arc.place) == Some(ResourceKind::Atomic))
             .or_else(|| {
                 net.arcs_of(tid, ArcDir::Input)
                     .find(|arc| net.is_resource(arc.place))
@@ -771,7 +984,7 @@ fn collect_lock_places(net: &PtNet, initial_marking: &Marking) -> Vec<PlaceId> {
     for idx in 0..net.num_places() {
         let pid = PlaceId::from(idx);
         if matches!(
-            net.resource_kind(pid),
+            infer_resource_kind(net, pid),
             Some(ResourceKind::Mutex | ResourceKind::RwLock)
         ) && initial_marking.tokens(pid) > 0
         {
@@ -805,17 +1018,220 @@ fn collect_lock_places(net: &PtNet, initial_marking: &Marking) -> Vec<PlaceId> {
 
 fn resource_kind_str(net: &PtNet, pid: PlaceId) -> Option<&'static str> {
     let place = net.place(pid)?;
-    if !matches!(place.kind.place_type, PlaceClass::Resource(_)) {
+    if !matches!(place.kind.place_type, PlaceClass::Resource(())) || place.name.starts_with("data.")
+    {
         return None;
     }
-    Some(match net.resource_kind(pid) {
+    Some(match infer_resource_kind(net, pid) {
         Some(ResourceKind::Mutex) => "mutex",
         Some(ResourceKind::RwLock) => "rwlock",
         Some(ResourceKind::Condvar) => "condvar",
         Some(ResourceKind::Atomic) => "atomic",
         Some(ResourceKind::Thread) => "thread",
-        _ => "resource",
+        None => "resource",
     })
+}
+
+fn collect_transition_unsafe_violations(
+    ty: &TransitionType,
+    fn_def_path: &str,
+    trans_span: &str,
+    trans_hole_id: Option<&str>,
+    codegen_map: &CodegenMap,
+    seen: &mut BTreeSet<(String, String)>,
+    out: &mut Vec<PurityViolation>,
+) {
+    match ty {
+        TransitionType::UnsafeRead(_, op_span, _, _)
+        | TransitionType::UnsafeWrite(_, op_span, _, _) => {
+            let effective_span = if !op_span.is_empty() {
+                op_span.as_str()
+            } else {
+                trans_span
+            };
+            let hid = codegen_map
+                .hole_for_span(effective_span)
+                .or_else(|| trans_hole_id.map(str::to_string));
+            if let Some(hid) = hid
+                && seen.insert((hid.clone(), effective_span.to_string()))
+            {
+                let op = if matches!(ty, TransitionType::UnsafeWrite(..)) {
+                    "unsafe_write"
+                } else {
+                    "unsafe_read"
+                };
+                out.push(PurityViolation {
+                    hole_id: hid.clone(),
+                    fn_def_path: fn_def_path.to_string(),
+                    kind: "unsafe_in_hole".to_string(),
+                    op: op.to_string(),
+                    span: effective_span.to_string(),
+                    message: format!(
+                        "unsafe operation `{op}` originates inside hole `{hid}` at {effective_span}"
+                    ),
+                });
+            }
+        }
+        TransitionType::UnsafeAccess(ops) => {
+            let mut recorded_any = false;
+            for uop in ops {
+                let effective_span = if !uop.span.is_empty() {
+                    uop.span.as_str()
+                } else {
+                    trans_span
+                };
+                if let Some(hid) = codegen_map.hole_for_span(effective_span) {
+                    recorded_any = true;
+                    if seen.insert((hid.clone(), effective_span.to_string())) {
+                        let op = if uop.is_write {
+                            "unsafe_write"
+                        } else {
+                            "unsafe_read"
+                        };
+                        out.push(PurityViolation {
+                            hole_id: hid.clone(),
+                            fn_def_path: fn_def_path.to_string(),
+                            kind: "unsafe_in_hole".to_string(),
+                            op: op.to_string(),
+                            span: effective_span.to_string(),
+                            message: format!(
+                                "unsafe operation `{op}` originates inside hole `{hid}` at {effective_span}"
+                            ),
+                        });
+                    }
+                }
+            }
+            if !recorded_any
+                && let Some(hid) = trans_hole_id
+                && seen.insert((hid.to_string(), trans_span.to_string()))
+            {
+                out.push(PurityViolation {
+                    hole_id: hid.to_string(),
+                    fn_def_path: fn_def_path.to_string(),
+                    kind: "unsafe_in_hole".to_string(),
+                    op: "unsafe_access".to_string(),
+                    span: trans_span.to_string(),
+                    message: format!(
+                        "unsafe operation `unsafe_access` originates inside hole `{hid}` at {trans_span}"
+                    ),
+                });
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sanitize_mod_ident(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+fn module_names_match(a: &str, b: &str) -> bool {
+    a == b || sanitize_mod_ident(a) == sanitize_mod_ident(b)
+}
+
+fn fn_in_module(fn_def_path: &str, focus_module: &str, crate_name: &str) -> bool {
+    let trimmed = fn_def_path.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    let mut segs = trimmed.split("::").peekable();
+    if let Some(&first) = segs.peek()
+        && (first == crate_name || first == "crate")
+    {
+        segs.next();
+    }
+    let rest: Vec<&str> = segs.collect();
+    let Some(&first) = rest.first() else {
+        return false;
+    };
+    if module_names_match(first, focus_module) {
+        return true;
+    }
+    // Entry module functions may live directly at crate root (`crate_name::cf_worker`).
+    if module_names_match(focus_module, "main") && rest.len() == 1 {
+        return true;
+    }
+    false
+}
+
+fn span_in_module(span: &str, focus_module: &str) -> bool {
+    let Some((file, _)) = parse_span_file_line(span) else {
+        return false;
+    };
+    let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+    files_match(&file, &expected)
+}
+
+fn resource_in_module(resource: &str, focus_module: &str) -> bool {
+    let trimmed = resource.trim();
+    if let Some((owner, _)) = trimmed.split_once("::") {
+        module_names_match(owner, focus_module)
+    } else {
+        false
+    }
+}
+
+fn file_is_domain_rs(file: &str) -> bool {
+    !file.is_empty() && files_match(file, "src/domain.rs")
+}
+
+fn purity_violation_matches_focus(
+    pv: &PurityViolation,
+    focus_module: &str,
+    codegen_map: Option<&CodegenMap>,
+    crate_name: &str,
+) -> bool {
+    if let Some(map) = codegen_map {
+        if let Some(hole) = map.holes.iter().find(|h| h.id == pv.hole_id) {
+            if let Some(ref m) = hole.module
+                && !m.is_empty()
+            {
+                return module_names_match(m, focus_module);
+            }
+            if let Some((owner, _)) = hole.function.split_once("::") {
+                return module_names_match(owner, focus_module);
+            }
+            if let Some(ref file) = hole.file
+                && !file.is_empty()
+            {
+                let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+                return files_match(file, &expected) || file_is_domain_rs(file);
+            }
+        }
+        if let Some(th) = map.type_holes.iter().find(|t| t.id == pv.hole_id) {
+            if let Some(ref m) = th.module
+                && !m.is_empty()
+            {
+                if module_names_match(m, focus_module) || m == "domain" {
+                    return true;
+                }
+                return false;
+            }
+            // Global `src/domain.rs` type hole (module unspecified).
+            return true;
+        }
+        if let Some(range) = map.type_hole_ranges.get(&pv.hole_id) {
+            if range.file.is_empty() || file_is_domain_rs(&range.file) {
+                return true;
+            }
+            let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+            return files_match(&range.file, &expected);
+        }
+        if let Some(range) = map.hole_ranges.get(&pv.hole_id)
+            && !range.file.is_empty()
+        {
+            let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+            if files_match(&range.file, &expected) || file_is_domain_rs(&range.file) {
+                return true;
+            }
+            return fn_in_module(&pv.fn_def_path, focus_module, crate_name);
+        }
+    }
+    fn_in_module(&pv.fn_def_path, focus_module, crate_name)
+        || span_in_module(&pv.span, focus_module)
+        || parse_span_file_line(&pv.span).is_some_and(|(f, _)| file_is_domain_rs(&f))
 }
 
 fn collect_loop_purity_violations(
@@ -985,7 +1401,6 @@ fn resource_kind_matches(rk: ResourceKind, kind_str: &str) -> bool {
         ResourceKind::Condvar => k == "condvar",
         ResourceKind::Atomic => k == "atomic",
         ResourceKind::Thread => k == "thread",
-        _ => false,
     }
 }
 
@@ -1024,9 +1439,9 @@ mod tests {
         PtPlaceKind::control(sub)
     }
 
-    fn resource_place(kind: ResourceKind, capacity: Option<usize>) -> PtPlaceKind {
+    fn resource_place(capacity: Option<usize>) -> PtPlaceKind {
         PtPlaceKind {
-            place_type: PlaceClass::Resource(kind),
+            place_type: PlaceClass::Resource(()),
             span: String::new(),
             capacity,
         }
@@ -1047,14 +1462,10 @@ mod tests {
     #[test]
     fn exports_concir_impl_net_with_resource_mapping_held_locks_and_completed_functions() {
         let mut b = PtBuilder::new();
-        let m_place = b.add_marked_place(
-            "shared.r0_main_m",
-            resource_place(ResourceKind::Mutex, Some(1)),
-            1,
-        );
+        let m_place = b.add_marked_place("shared.r0_main_m", resource_place(Some(1)), 1);
         let cv_place = b.add_marked_place(
             "Condvar:src/main.rs:12:5: 12:20 (#0)",
-            resource_place(ResourceKind::Condvar, Some(1)),
+            resource_place(Some(1)),
             1,
         );
         let p_start = b.add_marked_place("main_start", control_place(ControlSub::FunctionStart), 1);
@@ -1146,6 +1557,8 @@ mod tests {
             ],
             holes: vec![],
             hole_ranges: BTreeMap::new(),
+            type_holes: vec![],
+            type_hole_ranges: BTreeMap::new(),
         };
 
         let subnets = vec![
@@ -1168,6 +1581,8 @@ mod tests {
             subnets: &subnets,
             codegen_map: Some(&codegen_map),
             place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &[],
         });
 
         assert_eq!(report["schema"], SCHEMA);
@@ -1229,11 +1644,7 @@ mod tests {
     #[test]
     fn detects_sync_and_loop_purity_violations_inside_hole_ranges() {
         let mut b = PtBuilder::new();
-        let m_place = b.add_marked_place(
-            "Mutex_0",
-            resource_place(ResourceKind::Mutex, Some(1)),
-            1,
-        );
+        let m_place = b.add_marked_place("Mutex_0", resource_place(Some(1)), 1);
         let p0 = b.add_marked_place("p0", control_place(ControlSub::FunctionStart), 1);
         let p1 = b.add_place("p1", control_place(ControlSub::BasicBlock));
         let p2 = b.add_place("p2", control_place(ControlSub::FunctionEnd));
@@ -1316,6 +1727,8 @@ mod tests {
                 ..CodegenHole::default()
             }],
             hole_ranges,
+            type_holes: vec![],
+            type_hole_ranges: BTreeMap::new(),
         };
 
         let mut hints = BTreeMap::new();
@@ -1331,6 +1744,8 @@ mod tests {
             subnets: &[],
             codegen_map: Some(&codegen_map),
             place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &[],
         });
 
         let transitions = report["transitions"].as_array().unwrap();
@@ -1360,8 +1775,8 @@ mod tests {
     #[test]
     fn deadlock_state_is_flagged_deadlock_not_terminal_and_write_roundtrips() {
         let mut b = PtBuilder::new();
-        let l1 = b.add_marked_place("L1", resource_place(ResourceKind::Mutex, Some(1)), 1);
-        let l2 = b.add_marked_place("L2", resource_place(ResourceKind::Mutex, Some(1)), 1);
+        let l1 = b.add_marked_place("L1", resource_place(Some(1)), 1);
+        let l2 = b.add_marked_place("L2", resource_place(Some(1)), 1);
         let a0 = b.add_marked_place("a0", control_place(ControlSub::BasicBlock), 1);
         let a1 = b.add_place("a1", control_place(ControlSub::BasicBlock));
         let a2 = b.add_place("a2", control_place(ControlSub::BasicBlock));
@@ -1434,6 +1849,8 @@ mod tests {
                 subnets: &[],
                 codegen_map: None,
                 place_field_hints: &hints,
+                focus_module: None,
+                unsafe_spans: &[],
             },
             &out_path,
         )
@@ -1478,13 +1895,20 @@ mod tests {
         assert_eq!(parse_span_file_line("no-location (#0)"), None);
 
         let mut b = PtBuilder::new();
-        let rw = b.add_marked_place("rw", resource_place(ResourceKind::RwLock, Some(10)), 10);
-        let at = b.add_marked_place("at", resource_place(ResourceKind::Atomic, Some(1)), 1);
+        let rw = b.add_marked_place("RwLock_0", resource_place(Some(10)), 10);
+        let at = b.add_marked_place("Atomic_0", resource_place(Some(1)), 1);
         let p0 = b.add_marked_place("p0", control_place(ControlSub::BasicBlock), 1);
 
         let t_r = b.add_transition("r", PtTransitionKind::new(TransitionType::RwLockRead(rw.index())));
+        b.add_input_arc(rw, t_r, 1);
         let t_w = b.add_transition("w", PtTransitionKind::new(TransitionType::RwLockWrite(rw.index())));
+        b.add_input_arc(rw, t_w, 10);
         let t_ru = b.add_transition("ru", PtTransitionKind::new(TransitionType::Unlock(rw.index())));
+        b.add_output_arc(rw, t_ru, 1);
+        let t_wu = b.add_transition("wu", PtTransitionKind::new(TransitionType::Unlock(rw.index())));
+        b.add_output_arc(rw, t_wu, 10);
+        let t_dr = b.add_transition("dr", PtTransitionKind::new(TransitionType::DropRead(rw.index())));
+        let t_dw = b.add_transition("dw", PtTransitionKind::new(TransitionType::DropWrite(rw.index())));
         let t_wait = b.add_transition("wait", PtTransitionKind::new(TransitionType::Wait));
         let t_al = b.add_transition(
             "al",
@@ -1545,13 +1969,24 @@ mod tests {
             "cir_sync::sem_release::r1_main_sem::cir_trace::Semaphore::release_sid_summary_t0",
             PtTransitionKind::new(TransitionType::Function),
         );
+        let t_cir_rw_rl = b.add_transition(
+            "cir_sync::rwlock_read_lock::r2_main_rw::cir_trace::rwlock_read_lock_summary_t0",
+            PtTransitionKind::new(TransitionType::Function),
+        );
+        let t_cir_rw_wu = b.add_transition(
+            "cir_generated::cir_trace::rwlock_write_unlock",
+            PtTransitionKind::new(TransitionType::Function),
+        );
         let _ = p0;
         let (net, _) = b.build();
         let prov = TranslationProvenance::default();
 
-        assert_eq!(classify_transition(&net, t_r, &prov).1, "rwlock_read");
-        assert_eq!(classify_transition(&net, t_w, &prov).1, "rwlock_write");
-        assert_eq!(classify_transition(&net, t_ru, &prov).1, "rwlock_unlock");
+        assert_eq!(classify_transition(&net, t_r, &prov).1, "rwlock_read_lock");
+        assert_eq!(classify_transition(&net, t_w, &prov).1, "rwlock_write_lock");
+        assert_eq!(classify_transition(&net, t_ru, &prov).1, "rwlock_read_unlock");
+        assert_eq!(classify_transition(&net, t_wu, &prov).1, "rwlock_write_unlock");
+        assert_eq!(classify_transition(&net, t_dr, &prov).1, "rwlock_read_unlock");
+        assert_eq!(classify_transition(&net, t_dw, &prov).1, "rwlock_write_unlock");
         assert_eq!(classify_transition(&net, t_wait, &prov).1, "condvar_wait");
         assert_eq!(classify_transition(&net, t_al, &prov).1, "atomic_load");
         assert_eq!(classify_transition(&net, t_as, &prov).1, "atomic_store");
@@ -1561,5 +1996,386 @@ mod tests {
         assert_eq!(classify_transition(&net, t_cs, &prov), (true, "channel_send", Some("r0_main_ch".to_string())));
         assert_eq!(classify_transition(&net, t_cr, &prov), (true, "channel_recv", Some("r0_main_ch".to_string())));
         assert_eq!(classify_transition(&net, t_sr, &prov), (true, "sem_release", Some("r1_main_sem".to_string())));
+        assert_eq!(classify_transition(&net, t_cir_rw_rl, &prov), (true, "rwlock_read_lock", Some("r2_main_rw".to_string())));
+        assert_eq!(classify_transition(&net, t_cir_rw_wu, &prov), (true, "rwlock_write_unlock", None));
+    }
+
+    #[test]
+    fn exports_rwlock_read_write_ops_and_resolves_rwlock_fqn() {
+        let mut b = PtBuilder::new();
+        let rw = b.add_marked_place("RwLock_0", resource_place(Some(10)), 10);
+        let p0 = b.add_marked_place("p0", control_place(ControlSub::FunctionStart), 1);
+        let p1 = b.add_place("p1", control_place(ControlSub::BasicBlock));
+        let p2 = b.add_place("p2", control_place(ControlSub::BasicBlock));
+        let p3 = b.add_place("p3", control_place(ControlSub::BasicBlock));
+        let p_end = b.add_place("p_end", control_place(ControlSub::FunctionEnd));
+
+        let t_rl = b.add_transition("bb0_read", PtTransitionKind::new(TransitionType::RwLockRead(rw.index())));
+        b.add_input_arc(p0, t_rl, 1);
+        b.add_input_arc(rw, t_rl, 1);
+        b.add_output_arc(p1, t_rl, 1);
+
+        let t_ru = b.add_transition("bb1_drop_read", PtTransitionKind::new(TransitionType::Unlock(rw.index())));
+        b.add_input_arc(p1, t_ru, 1);
+        b.add_output_arc(rw, t_ru, 1);
+        b.add_output_arc(p2, t_ru, 1);
+
+        let t_wl = b.add_transition("bb2_write", PtTransitionKind::new(TransitionType::RwLockWrite(rw.index())));
+        b.add_input_arc(p2, t_wl, 1);
+        b.add_input_arc(rw, t_wl, 10);
+        b.add_output_arc(p3, t_wl, 1);
+
+        let t_wu = b.add_transition("bb3_drop_write", PtTransitionKind::new(TransitionType::Unlock(rw.index())));
+        b.add_input_arc(p3, t_wu, 1);
+        b.add_output_arc(rw, t_wu, 10);
+        b.add_output_arc(p_end, t_wu, 1);
+
+        let (net, m0) = b.build();
+        let sg = build_sg(&net, &m0);
+        let prov = TranslationProvenance {
+            origins: (0..4)
+                .map(|bb| TransOrigin {
+                    fn_def_path: "cir_generated::orders::cf_sync".to_string(),
+                    bb,
+                    span: format!("src/orders.rs:{}:5: {}:30 (#0)", 10 + bb * 2, 10 + bb * 2),
+                })
+                .collect(),
+            ..TranslationProvenance::default()
+        };
+        let codegen_map = CodegenMap {
+            program: "book".to_string(),
+            resources: vec![CodegenResource {
+                fqn: "orders::book_rw".to_string(),
+                field: "r0_orders_book_rw".to_string(),
+                kind: "RwLock".to_string(),
+            }],
+            ..CodegenMap::default()
+        };
+        let hints = BTreeMap::new();
+        let report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &[],
+        });
+
+        let transitions = report["transitions"].as_array().unwrap();
+        assert_eq!(transitions[0]["op"], "rwlock_read_lock");
+        assert_eq!(transitions[0]["resource"], "orders::book_rw");
+        assert_eq!(transitions[1]["op"], "rwlock_read_unlock");
+        assert_eq!(transitions[1]["resource"], "orders::book_rw");
+        assert_eq!(transitions[2]["op"], "rwlock_write_lock");
+        assert_eq!(transitions[2]["resource"], "orders::book_rw");
+        assert_eq!(transitions[3]["op"], "rwlock_write_unlock");
+        assert_eq!(transitions[3]["resource"], "orders::book_rw");
+        assert!(report.get("focus_module").is_none());
+
+        let states = report["states"].as_array().unwrap();
+        let holding: usize = states
+            .iter()
+            .filter(|s| s["held_locks"] == json!(["orders::book_rw"]))
+            .count();
+        assert_eq!(holding, 2, "both read-locked and write-locked states hold orders::book_rw");
+    }
+
+    #[test]
+    fn attributes_purity_violations_to_type_holes_in_domain_rs_and_multi_file_modules() {
+        let mut b = PtBuilder::new();
+        let m_domain = b.add_marked_place("Mutex_0", resource_place(Some(1)), 1);
+        let p0 = b.add_marked_place("p0", control_place(ControlSub::FunctionStart), 1);
+        let p1 = b.add_place("p1", control_place(ControlSub::BasicBlock));
+        let p2 = b.add_place("p2", control_place(ControlSub::BasicBlock));
+        let p3 = b.add_place("p3", control_place(ControlSub::FunctionEnd));
+
+        let t_domain_lock = b.add_transition(
+            "domain_orderbook_lock",
+            PtTransitionKind::new(TransitionType::Lock(m_domain.index())),
+        );
+        b.add_input_arc(p0, t_domain_lock, 1);
+        b.add_input_arc(m_domain, t_domain_lock, 1);
+        b.add_output_arc(p1, t_domain_lock, 1);
+
+        let t_mod_spawn = b.add_transition(
+            "orders_hole_spawn",
+            PtTransitionKind::new(TransitionType::Spawn("std::thread::spawn".to_string())),
+        );
+        b.add_input_arc(p1, t_mod_spawn, 1);
+        b.add_output_arc(p2, t_mod_spawn, 1);
+
+        let t_domain_unsafe = b.add_transition(
+            "domain_unsafe",
+            PtTransitionKind::new(TransitionType::UnsafeAccess(vec![unipn::pt::UnsafeOp {
+                alias: 0,
+                is_write: true,
+                span: "src/domain.rs:19:9: 19:24 (#0)".to_string(),
+                basic_block: 2,
+                ty: "*mut i64".to_string(),
+            }])),
+        );
+        b.add_input_arc(p2, t_domain_unsafe, 1);
+        b.add_output_arc(p3, t_domain_unsafe, 1);
+
+        let (net, m0) = b.build();
+        let sg = build_sg(&net, &m0);
+
+        let prov = TranslationProvenance {
+            origins: vec![
+                TransOrigin {
+                    fn_def_path: "cir_generated::domain::OrderBook::push".to_string(),
+                    bb: 0,
+                    span: "E:\\proj\\src\\domain.rs:15:13: 15:35 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::orders::cf_worker".to_string(),
+                    bb: 1,
+                    span: "src/orders.rs:32:9: 32:40 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::domain::OrderBook::push".to_string(),
+                    bb: 2,
+                    span: "src/domain.rs:19:9: 19:24 (#0)".to_string(),
+                },
+            ],
+            ..TranslationProvenance::default()
+        };
+
+        let mut type_hole_ranges = BTreeMap::new();
+        type_hole_ranges.insert(
+            "th1".to_string(),
+            HoleRange {
+                file: "src/domain.rs".to_string(),
+                start_line: 10,
+                end_line: 25,
+            },
+        );
+        let mut hole_ranges = BTreeMap::new();
+        hole_ranges.insert(
+            "h_orders".to_string(),
+            HoleRange {
+                file: "src/orders.rs".to_string(),
+                start_line: 30,
+                end_line: 36,
+            },
+        );
+        let codegen_map = CodegenMap {
+            program: "exchange".to_string(),
+            resources: vec![],
+            holes: vec![CodegenHole {
+                id: "h_orders".to_string(),
+                module: Some("orders".to_string()),
+                function: "orders::worker".to_string(),
+                file: Some("src/orders.rs".to_string()),
+                line: Some(30),
+                ..CodegenHole::default()
+            }],
+            hole_ranges,
+            type_holes: vec![CodegenTypeHole {
+                id: "th1".to_string(),
+                type_name: "OrderBook".to_string(),
+                module: Some("orders".to_string()),
+                file: Some("src/domain.rs".to_string()),
+                line: Some(10),
+                start_line: Some(10),
+                end_line: Some(25),
+                req: vec!["R9".to_string()],
+            }],
+            type_hole_ranges,
+        };
+
+        let unsafe_spans = vec![(
+            "cir_generated::orders::cf_worker".to_string(),
+            "src/orders.rs:34:9: 34:28 (#0)".to_string(),
+        )];
+        let hints = BTreeMap::new();
+        let report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &unsafe_spans,
+        });
+
+        let transitions = report["transitions"].as_array().unwrap();
+        assert_eq!(transitions[0]["hole_id"], json!("th1"));
+        assert_eq!(transitions[1]["hole_id"], json!("h_orders"));
+        assert_eq!(transitions[2]["hole_id"], json!("th1"));
+
+        let violations = report["purity_violations"].as_array().unwrap();
+        assert_eq!(violations.len(), 4, "violations: {violations:?}");
+        assert!(violations.iter().any(|v| {
+            v["hole_id"] == "th1" && v["kind"] == "sync_in_hole" && v["op"] == "mutex_lock"
+        }));
+        assert!(violations.iter().any(|v| {
+            v["hole_id"] == "th1" && v["kind"] == "unsafe_in_hole" && v["op"] == "unsafe_write"
+        }));
+        assert!(violations.iter().any(|v| {
+            v["hole_id"] == "h_orders" && v["kind"] == "sync_in_hole" && v["op"] == "spawn"
+        }));
+        assert!(violations.iter().any(|v| {
+            v["hole_id"] == "h_orders" && v["kind"] == "unsafe_in_hole" && v["op"] == "unsafe_block"
+        }));
+    }
+
+    #[test]
+    fn focus_module_projects_outside_transitions_and_filters_purity_violations() {
+        let mut b = PtBuilder::new();
+        let m_orders = b.add_marked_place("shared.r0_orders_m", resource_place(Some(1)), 1);
+        let m_billing = b.add_marked_place("shared.r1_billing_m", resource_place(Some(1)), 1);
+        let p0 = b.add_marked_place("p0", control_place(ControlSub::FunctionStart), 1);
+        let p1 = b.add_place("p1", control_place(ControlSub::BasicBlock));
+        let p2 = b.add_place("p2", control_place(ControlSub::BasicBlock));
+        let p3 = b.add_place("p3", control_place(ControlSub::BasicBlock));
+        let p4 = b.add_place("p4", control_place(ControlSub::FunctionEnd));
+
+        // 0: orders::cf_place locks orders::m (in focus module -> stays observable)
+        let t_orders = b.add_transition(
+            "orders_lock",
+            PtTransitionKind::new(TransitionType::Lock(m_orders.index())),
+        );
+        b.add_input_arc(p0, t_orders, 1);
+        b.add_input_arc(m_orders, t_orders, 1);
+        b.add_output_arc(p1, t_orders, 1);
+
+        // 1: billing::cf_charge locks billing::m inside hole h_billing (outside focus -> projected silent + violation filtered out)
+        let t_billing = b.add_transition(
+            "billing_lock",
+            PtTransitionKind::new(TransitionType::Lock(m_billing.index())),
+        );
+        b.add_input_arc(p1, t_billing, 1);
+        b.add_input_arc(m_billing, t_billing, 1);
+        b.add_output_arc(p2, t_billing, 1);
+
+        // 2: main::cf_bridge unlocks orders::m (outside orders fn, but targets orders:: resource -> stays observable)
+        let t_bridge = b.add_transition(
+            "bridge_unlock_orders",
+            PtTransitionKind::new(TransitionType::Unlock(m_orders.index())),
+        );
+        b.add_input_arc(p2, t_bridge, 1);
+        b.add_output_arc(m_orders, t_bridge, 1);
+        b.add_output_arc(p3, t_bridge, 1);
+
+        // 3: domain::GlobalBook::bad locks billing::m inside global type hole th_global (projected silent, but global domain violation KEPT!)
+        let t_domain = b.add_transition(
+            "domain_bad_unlock",
+            PtTransitionKind::new(TransitionType::Unlock(m_billing.index())),
+        );
+        b.add_input_arc(p3, t_domain, 1);
+        b.add_output_arc(m_billing, t_domain, 1);
+        b.add_output_arc(p4, t_domain, 1);
+
+        let (net, m0) = b.build();
+        let sg = build_sg(&net, &m0);
+        let prov = TranslationProvenance {
+            origins: vec![
+                TransOrigin {
+                    fn_def_path: "cir_generated::orders::cf_place".to_string(),
+                    bb: 0,
+                    span: "src/orders.rs:12:5: 12:30 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::billing::cf_charge".to_string(),
+                    bb: 1,
+                    span: "src/billing.rs:22:5: 22:30 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::main::cf_bridge".to_string(),
+                    bb: 2,
+                    span: "src/main.rs:50:5: 50:30 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::domain::GlobalBook::bad".to_string(),
+                    bb: 3,
+                    span: "src/domain.rs:14:5: 14:30 (#0)".to_string(),
+                },
+            ],
+            ..TranslationProvenance::default()
+        };
+
+        let codegen_map = CodegenMap {
+            program: "shop".to_string(),
+            resources: vec![
+                CodegenResource {
+                    fqn: "orders::m".to_string(),
+                    field: "r0_orders_m".to_string(),
+                    kind: "Mutex".to_string(),
+                },
+                CodegenResource {
+                    fqn: "billing::m".to_string(),
+                    field: "r1_billing_m".to_string(),
+                    kind: "Mutex".to_string(),
+                },
+            ],
+            holes: vec![CodegenHole {
+                id: "h_billing".to_string(),
+                module: Some("billing".to_string()),
+                function: "billing::charge".to_string(),
+                file: Some("src/billing.rs".to_string()),
+                start_line: Some(20),
+                end_line: Some(25),
+                ..CodegenHole::default()
+            }],
+            hole_ranges: BTreeMap::new(),
+            type_holes: vec![CodegenTypeHole {
+                id: "th_global".to_string(),
+                type_name: "GlobalBook".to_string(),
+                module: None,
+                file: Some("src/domain.rs".to_string()),
+                start_line: Some(10),
+                end_line: Some(20),
+                ..CodegenTypeHole::default()
+            }],
+            type_hole_ranges: BTreeMap::new(),
+        };
+
+        let hints = BTreeMap::new();
+        let report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: Some("orders"),
+            unsafe_spans: &[],
+        });
+
+        assert_eq!(report["focus_module"], json!("orders"));
+        let transitions = report["transitions"].as_array().unwrap();
+        assert_eq!(transitions[0]["observable"], json!(true), "orders fn stays observable");
+        assert_eq!(transitions[1]["observable"], json!(false), "billing fn projected silent");
+        assert_eq!(
+            transitions[2]["observable"],
+            json!(true),
+            "op targeting orders:: resource stays observable"
+        );
+        assert_eq!(
+            transitions[3]["observable"],
+            json!(false),
+            "domain fn touching billing::m projected silent"
+        );
+
+        let violations = report["purity_violations"].as_array().unwrap();
+        assert_eq!(
+            violations.len(),
+            1,
+            "billing hole violation must be filtered out while global domain.rs type_hole violation is kept: {violations:?}"
+        );
+        assert_eq!(violations[0]["hole_id"], json!("th_global"));
     }
 }

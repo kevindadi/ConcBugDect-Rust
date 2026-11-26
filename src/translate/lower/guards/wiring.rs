@@ -239,7 +239,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
 #[cfg(test)]
 mod tests {
     use crate::translate::net::{
-        DataSub, NetBuilder, PlaceClass, ResourceKind, StateGraph, TransitionKind, TransitionType,
+        NetBuilder, PlaceClass, StateGraph, TransitionKind, TransitionType,
     };
 
     /// Boolean guard predicate places (`data.Mutex_0.false` = 1,
@@ -249,15 +249,11 @@ mod tests {
     #[test]
     fn bool_guard_predicate_conserves_tokens_and_eliminates_false_deadlocks() {
         let mut net = NetBuilder::new();
-        let mutex = net.place(PlaceClass::Resource(ResourceKind::Mutex), "Mutex_0", 1);
+        let mutex = net.place(PlaceClass::Resource(()), "Mutex_0", 1);
         net.set_tokens(mutex, 1);
-        let data_false = net.place(
-            PlaceClass::Data(DataSub::Predicate),
-            "data.Mutex_0.false",
-            1,
-        );
+        let data_false = net.place(PlaceClass::Resource(()), "data.Mutex_0.false", 1);
         net.set_tokens(data_false, 1);
-        let data_true = net.place(PlaceClass::Data(DataSub::Predicate), "data.Mutex_0.true", 1);
+        let data_true = net.place(PlaceClass::Resource(()), "data.Mutex_0.true", 1);
 
         // Waiter: lock -> header -> switch1 (reads false) / switch2 (reads true)
         let w0 = crate::translate::net::control_place(&mut net, "wait_0", 1);

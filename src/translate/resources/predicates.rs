@@ -2,7 +2,7 @@
 
 use crate::analysis::api_patterns::KeyApiRegex;
 use crate::translate::construct::PetriNet;
-use crate::translate::net::{DataSub, PlaceClass, PlaceId};
+use crate::translate::net::{PlaceClass, PlaceId};
 use crate::util::format_name;
 use petgraph::visit::IntoNodeReferences;
 use rustc_data_structures::fx::FxHashSet;
@@ -78,13 +78,13 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                 .place_name(lock_node)
                 .unwrap_or_else(|| format!("Mutex_{}", lock_node.index()));
             let false_place = self.net.place(
-                PlaceClass::Data(DataSub::Predicate),
+                PlaceClass::Resource(()),
                 format!("data.{}.false", lock_name),
                 1,
             );
             self.net.set_tokens(false_place, 1);
             let true_place = self.net.place(
-                PlaceClass::Data(DataSub::Predicate),
+                PlaceClass::Resource(()),
                 format!("data.{}.true", lock_name),
                 1,
             );

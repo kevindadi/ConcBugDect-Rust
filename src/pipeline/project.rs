@@ -146,6 +146,11 @@ pub fn project<'a, 'tcx>(
             }
         });
         let place_field_hints = crate::report::concir_net::collect_place_field_hints(petri);
+        let unsafe_spans = if codegen_map.is_some() {
+            crate::report::concir_net::collect_unsafe_spans(petri, &ctx.crate_name)
+        } else {
+            Vec::new()
+        };
         let concir_inputs = crate::report::concir_net::ConcirNetInputs {
             crate_name: &ctx.crate_name,
             entry_mode: petri.entry_mode.as_str(),
@@ -156,6 +161,8 @@ pub fn project<'a, 'tcx>(
             subnets: &petri.subnets,
             codegen_map: codegen_map.as_ref(),
             place_field_hints: &place_field_hints,
+            focus_module: ctx.options.focus_module.as_deref(),
+            unsafe_spans: &unsafe_spans,
         };
         if let Err(err) = crate::report::concir_net::write_concir_net(&concir_inputs, export_path)
         {

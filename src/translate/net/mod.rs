@@ -12,17 +12,112 @@ pub use registry::{CustomLockEntry, FunctionRegistry, ResourceRegistry};
 use std::marker::PhantomData;
 
 pub use unipn::ArcDir;
-use unipn::PlaceClass as GenericPlaceClass;
 use unipn::pt::{PtPlaceKind, PtTransitionKind};
 
 pub use unipn::analysis::pt::reachability::StateGraph;
 pub use unipn::pt::{
-    AliasId, AtomicOrdering, DiagnosticReport, PlaceType, ResourceKind, TransitionType, UnsafeOp,
+    AliasId, AtomicOrdering, DiagnosticReport, PlaceType, TransitionType, UnsafeOp,
 };
-pub use unipn::{ControlSub, DataSub, Marking, PlaceId, TransitionId};
+pub use unipn::{ControlSub, Marking, PlaceId, TransitionId};
 
-/// P/T place class. Same type `unipn` calls [`PlaceType`].
-pub type PlaceClass = GenericPlaceClass<ResourceKind>;
+/// P/T place class (`unipn::PlaceClass<()>`).
+pub type PlaceClass = PlaceType;
+
+/// Classification of shared-resource places inferred from P/T structure and
+/// place naming conventions (since `unipn::pt::PlaceType` is `PlaceClass<()>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ResourceKind {
+    Mutex,
+    RwLock,
+    Condvar,
+    Atomic,
+    Thread,
+}
+
+/// Infer the [`ResourceKind`] of a P/T resource place from its incident
+/// transitions and place naming conventions.
+pub fn infer_resource_kind(net: &Net, place: PlaceId) -> Option<ResourceKind> {
+    let p = net.place(place)?;
+    if !matches!(p.kind.place_type, unipn::PlaceClass::Resource(())) {
+        return None;
+    }
+    if p.name.starts_with("data.") {
+        return None;
+    }
+
+    let mut saw_unlock_unit = false;
+    let mut saw_wait = false;
+    for arc in net.arcs_at(place) {
+        let Some(t) = net.transition(arc.transition) else {
+            continue;
+        };
+        match &t.kind.transition_type {
+            TransitionType::RwLockRead(idx)
+            | TransitionType::RwLockWrite(idx)
+            | TransitionType::DropRead(idx)
+            | TransitionType::DropWrite(idx)
+                if *idx == place.index() =>
+            {
+                return Some(ResourceKind::RwLock);
+            }
+            TransitionType::Lock(idx) if *idx == place.index() => {
+                return Some(ResourceKind::Mutex);
+            }
+            TransitionType::Notify(idx) if *idx == place.index() => {
+                return Some(ResourceKind::Condvar);
+            }
+            TransitionType::AtomicLoad(..)
+            | TransitionType::AtomicStore(..)
+            | TransitionType::AtomicCmpXchg(..) => {
+                return Some(ResourceKind::Atomic);
+            }
+            TransitionType::Unlock(idx) if *idx == place.index() => {
+                if arc.weight > 1 || p.kind.capacity.is_some_and(|c| c > 1) {
+                    return Some(ResourceKind::RwLock);
+                }
+                saw_unlock_unit = true;
+            }
+            TransitionType::Wait => {
+                saw_wait = true;
+            }
+            _ => {}
+        }
+    }
+
+    let name = p.name.as_str();
+    if name.starts_with("RwLock_") || name.starts_with("RwLock:") {
+        return Some(ResourceKind::RwLock);
+    }
+    if name.starts_with("Mutex_") || name.starts_with("Mutex:") {
+        return Some(ResourceKind::Mutex);
+    }
+    if name.starts_with("Condvar:")
+        || name.starts_with("Condvar_")
+        || name.starts_with("Waiting:")
+    {
+        return Some(ResourceKind::Condvar);
+    }
+    if name.starts_with("Atomic(")
+        || name.starts_with("Atomic_")
+        || name.starts_with("atomic(")
+        || name == "SeqCst_Global"
+    {
+        return Some(ResourceKind::Atomic);
+    }
+    if name.starts_with("Thread_") || name.starts_with("thread_") {
+        return Some(ResourceKind::Thread);
+    }
+    if saw_unlock_unit {
+        return Some(ResourceKind::Mutex);
+    }
+    if saw_wait {
+        return Some(ResourceKind::Condvar);
+    }
+    if p.kind.capacity.is_some_and(|c| c > 1) {
+        return Some(ResourceKind::RwLock);
+    }
+    None
+}
 
 /// Finished P/T net (`unipn::pt::PtNet`).
 pub type Net = unipn::pt::PtNet;
@@ -271,10 +366,9 @@ impl<'analysis, 'tcx> crate::translate::construct::PetriNet<'analysis, 'tcx> {
         initial: usize,
         capacity: usize,
         span: String,
-        kind: ResourceKind,
     ) -> PlaceId {
         self.net
-            .add_place(name, initial, capacity, PlaceClass::Resource(kind), span)
+            .add_place(name, initial, capacity, PlaceClass::Resource(()), span)
     }
 
     /// Function `_start`/`_end` places are execution positions, not resources:

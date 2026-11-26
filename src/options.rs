@@ -336,8 +336,17 @@ fn make_options_parser() -> clap::Command {
                 .long("codegen-map")
                 .value_name("FILE")
                 .help(
-                    "Path to ConcIR codegen.json (with optional hole_ranges) for canonical \
-                     resource mapping and hole purity checks",
+                    "Path to ConcIR codegen.json (with optional hole_ranges / type_hole_ranges) \
+                     for canonical resource mapping and hole purity checks",
+                ),
+        )
+        .arg(
+            Arg::new("focus_module")
+                .long("focus-module")
+                .value_name("MODULE")
+                .help(
+                    "Project concir-impl-net/1 onto MODULE (project observable sync ops outside \
+                     MODULE to silent and filter purity violations to MODULE / its domain types)",
                 ),
         );
     parser
@@ -351,8 +360,10 @@ pub struct Options {
     pub exclude_candidates: Option<PathBuf>,
     /// `--export-concir-net`: write `concir-impl-net/1` JSON at the end of `pipeline::project`.
     pub export_concir_net: Option<PathBuf>,
-    /// `--codegen-map`: `codegen.json` (plus optional `hole_ranges`) for resource mapping and purity checks.
+    /// `--codegen-map`: `codegen.json` (plus optional `hole_ranges` / `type_hole_ranges`) for resource mapping and purity checks.
     pub codegen_map: Option<PathBuf>,
+    /// `--focus-module`: optional ConcIR module name for modular refinement projection.
+    pub focus_module: Option<String>,
     /// Single-file analysis path (`-f`), used for CIR / filtering when set.
     pub input_file: Option<PathBuf>,
     pub crate_filter: CrateNameList,
@@ -374,6 +385,7 @@ impl Default for Options {
             exclude_candidates: None,
             export_concir_net: None,
             codegen_map: None,
+            focus_module: None,
             input_file: None,
             crate_filter: CrateNameList::default(),
             cross_crate: Vec::new(),
@@ -495,6 +507,7 @@ impl Options {
             .get_one::<String>("codegen_map")
             .cloned()
             .map(PathBuf::from);
+        self.focus_module = matches.get_one::<String>("focus_module").cloned();
 
         self.dump_options = DumpOptions {
             dump_call_graph: matches.get_flag("dump_callgraph"),
@@ -932,5 +945,15 @@ mod tests {
             !options.config.reduce_net,
             "--export-concir-net must disable Petri-net reduction"
         );
+        assert_eq!(options.focus_module, None);
+
+        let mut focused = Options::default();
+        focused.parse_from_args(&[
+            "--export-concir-net".to_string(),
+            "out/impl_net.json".to_string(),
+            "--focus-module".to_string(),
+            "orders".to_string(),
+        ]);
+        assert_eq!(focused.focus_module.as_deref(), Some("orders"));
     }
 }

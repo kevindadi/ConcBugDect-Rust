@@ -9,7 +9,7 @@ use crate::analysis::sync::{SlotId, SyncSite};
 use crate::pipeline::analyze::ClassKind;
 use crate::translate::construct::PetriNet;
 use crate::translate::net::CustomLockEntry;
-use crate::translate::net::{NetBuilder, PlaceClass, PlaceId, ResourceKind};
+use crate::translate::net::{NetBuilder, PlaceClass, PlaceId};
 use crate::translate::resources::lock_binder::{BinderInput, ResourceBinder};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet};
 use std::sync::Arc;
@@ -296,18 +296,14 @@ pub(crate) fn add_lock_place(
 ) -> PlaceId {
     if rwlock {
         let place = builder.place(
-            PlaceClass::Resource(ResourceKind::RwLock),
+            PlaceClass::Resource(()),
             format!("RwLock_{group_id}"),
             RWLOCK_CAPACITY,
         );
         builder.set_tokens(place, RWLOCK_CAPACITY);
         place
     } else {
-        let place = builder.place(
-            PlaceClass::Resource(ResourceKind::Mutex),
-            format!("Mutex_{group_id}"),
-            1,
-        );
+        let place = builder.place(PlaceClass::Resource(()), format!("Mutex_{group_id}"), 1);
         builder.set_tokens(place, 1);
         place
     }
@@ -318,7 +314,7 @@ pub(crate) fn add_atomic_place(builder: &mut NetBuilder<'_>, site: &SyncSite<'_>
         format!("Atomic({},{})", site.instance.index(), site.local.as_u32()),
         1,
         1,
-        PlaceClass::Resource(ResourceKind::Atomic),
+        PlaceClass::Resource(()),
         site.span.clone(),
     )
 }
@@ -390,12 +386,11 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                     guard_plan.initial_mailbox_tokens,
                     1,
                     String::default(),
-                    ResourceKind::Condvar,
                 );
                 if guard_plan.wait_entry_waiting_weight > 0 {
                     let waiting_name = format!("Waiting:{}", span);
                     let waiting_node = self.net.place(
-                        PlaceClass::Resource(ResourceKind::Condvar),
+                        PlaceClass::Resource(()),
                         waiting_name,
                         usize::MAX,
                     );
@@ -473,7 +468,6 @@ impl<'analysis, 'tcx> PetriNet<'analysis, 'tcx> {
                     1,
                     1,
                     atomic_info.span.clone(),
-                    crate::translate::net::ResourceKind::Atomic,
                 )]
             } else {
                 place_ids

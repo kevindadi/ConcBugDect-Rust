@@ -453,7 +453,7 @@ mod tests {
     use crate::analysis::callgraph::InstanceId;
     use crate::analysis::primitives::blocking::LockGuardId;
     use crate::translate::net::{
-        NetBuilder, PlaceClass, PlaceId, ResourceKind, StateGraph, TransitionKind, TransitionType,
+        NetBuilder, PlaceClass, PlaceId, StateGraph, TransitionKind, TransitionType,
     };
     use rustc_middle::mir::Local;
 
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn loop_summary_fallback_releasing_held_guard_prevents_mutex_leak() {
         let mut net = NetBuilder::new();
-        let mutex = net.place(PlaceClass::Resource(ResourceKind::Mutex), "Mutex_0", 1);
+        let mutex = net.place(PlaceClass::Resource(()), "Mutex_0", 1);
         let set_entry = crate::translate::net::control_place(&mut net, "set_1", 1);
         let set_end = crate::translate::net::function_end(&mut net, "set_end");
         let wait_latch = crate::translate::net::control_place(&mut net, "wait_for_10", 1);

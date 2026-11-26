@@ -430,7 +430,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
     pub(super) fn emit_thread_place(&mut self, owner: Option<Local>) -> PlaceId {
         use crate::translate::net::{ControlSub, PlaceClass};
         let place = self.net.place(
-            PlaceClass::Control(ControlSub::ThreadPlace),
+            PlaceClass::Control(ControlSub::FunctionEnd),
             format!("{}_thread_{}", self.frame_name, self.thread_seq),
             1,
         );

@@ -5,7 +5,7 @@ use crate::analysis::callgraph::InstanceId;
 use crate::analysis::memory::pointsto::AliasId;
 use crate::analysis::primitives::blocking::CondVarId;
 use crate::analysis::primitives::blocking::{LockGuardId, LockGuardTy};
-use crate::translate::net::{PlaceClass, ResourceKind, TransitionKind};
+use crate::translate::net::{PlaceClass, TransitionKind};
 use crate::translate::net::{PlaceId, TransitionId, TransitionType};
 use crate::util::has_spn_attribute;
 use rustc_hir::def_id::DefId;
@@ -347,7 +347,7 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                     format!("Condvar:{span}"),
                     0,
                     1,
-                    PlaceClass::Resource(ResourceKind::Condvar),
+                    PlaceClass::Resource(()),
                     span.to_string(),
                 );
                 self.net.arc_in(condvar_node, bb_ret, 1);
@@ -487,18 +487,13 @@ mod lock_tests {
     #[test]
     fn rebound_guard_wait_releases_mutex_and_blocks_on_condvar() {
         use crate::translate::net::{
-            ArcDir, ControlSub, NetBuilder, PlaceClass, ResourceKind, StateGraph, TransitionKind,
-            TransitionType,
+            ArcDir, ControlSub, NetBuilder, PlaceClass, StateGraph, TransitionKind, TransitionType,
         };
 
         let mut net = NetBuilder::new();
-        let mutex = net.place(PlaceClass::Resource(ResourceKind::Mutex), "Mutex_0", 1);
+        let mutex = net.place(PlaceClass::Resource(()), "Mutex_0", 1);
         net.set_tokens(mutex, 1);
-        let condvar = net.place(
-            PlaceClass::Resource(ResourceKind::Condvar),
-            "Condvar:wait",
-            1,
-        );
+        let condvar = net.place(PlaceClass::Resource(()), "Condvar:wait", 1);
         let wl_start = net.marked_place(
             PlaceClass::Control(ControlSub::FunctionStart),
             "wait_lost_start",
