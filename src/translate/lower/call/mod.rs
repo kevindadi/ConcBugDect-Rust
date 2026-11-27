@@ -176,6 +176,21 @@ impl<'translate, 'analysis, 'tcx> BodyToPetriNet<'translate, 'analysis, 'tcx> {
                 _ => format!("{callee}_summary_t{i}"),
             };
             let t = self.new_transition(trans_name, TransitionType::Function, bb_idx, span.to_string());
+            if i == 0
+                && let Some(ref field) = res_hint
+            {
+                match summary_kind.as_str() {
+                    "channel_send" => {
+                        let ch_place = self.net.cir_channel_place(field);
+                        self.net.arc_out(ch_place, t, 1);
+                    }
+                    "channel_recv" => {
+                        let ch_place = self.net.cir_channel_place(field);
+                        self.net.arc_in(ch_place, t, 1);
+                    }
+                    _ => {}
+                }
+            }
             self.net.arc_in(cursor, t, 1);
             let next = places.get(i + 1).copied().unwrap_or(cursor);
             if i + 1 < places.len() {

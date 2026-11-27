@@ -384,6 +384,7 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
                     custom_hint.as_deref(),
                     codegen_map,
                     inputs.place_field_hints,
+                    prov,
                 )
             } else {
                 String::new()
@@ -890,6 +891,7 @@ fn resolve_transition_resource(
     custom_hint: Option<&str>,
     codegen_map: Option<&CodegenMap>,
     place_field_hints: &BTreeMap<usize, String>,
+    provenance: &TranslationProvenance,
 ) -> String {
     if let Some(hint) = custom_hint {
         if let Some(map) = codegen_map
@@ -901,6 +903,51 @@ fn resolve_transition_resource(
     }
 
     let touched_place = transition_resource_place(net, tid);
+    if matches!(
+        net.transition(tid).map(|t| &t.kind.transition_type),
+        Some(TransitionType::Wait)
+    ) && touched_place.is_none()
+    {
+        if let Some(map) = codegen_map
+            && let Some(origin) = provenance.origin(tid)
+            && let Some(facts) = provenance.function(&origin.fn_def_path)
+            && let Some(bb_facts) = facts.bb(origin.bb)
+        {
+            for def in &bb_facts.defs {
+                if let Some(r) = map.resources.iter().find(|r| {
+                    resource_kind_matches(ResourceKind::Condvar, &r.kind)
+                        && !r.field.is_empty()
+                        && contains_ident_token(&def.rhs, &r.field)
+                }) {
+                    return r.fqn.clone();
+                }
+            }
+        }
+        let condvar_places: Vec<PlaceId> = (0..net.num_places())
+            .map(PlaceId::from)
+            .filter(|&pid| infer_resource_kind(net, pid) == Some(ResourceKind::Condvar))
+            .collect();
+        if condvar_places.len() == 1 {
+            let cv_pid = condvar_places[0];
+            let cv_name = net.place(cv_pid).map(|p| p.name.as_str()).unwrap_or("");
+            let cv_hint = place_field_hints.get(&cv_pid.index()).map(String::as_str);
+            if let Some(resolved) = codegen_map
+                .and_then(|m| m.resolve_resource(cv_name, cv_hint, Some(ResourceKind::Condvar)))
+            {
+                return resolved;
+            }
+            if !cv_name.is_empty() {
+                return cv_name.to_string();
+            }
+        }
+        if let Some(map) = codegen_map
+            && let Some(resolved) =
+                map.resolve_resource("Condvar_0", None, Some(ResourceKind::Condvar))
+        {
+            return resolved;
+        }
+    }
+
     let place_name = touched_place
         .and_then(|pid| net.place(pid))
         .map(|p| p.name.as_str());
@@ -955,16 +1002,10 @@ fn transition_resource_place(net: &PtNet, tid: TransitionId) -> Option<PlaceId> 
         | TransitionType::DropRead(p)
         | TransitionType::DropWrite(p)
         | TransitionType::Notify(p) => Some(PlaceId::from(*p)),
-        TransitionType::Wait => {
-            // Prefer the Condvar input arc over any re-acquired Mutex input arc.
-            net.arcs_of(tid, ArcDir::Input)
-                .find(|arc| infer_resource_kind(net, arc.place) == Some(ResourceKind::Condvar))
-                .or_else(|| {
-                    net.arcs_of(tid, ArcDir::Input)
-                        .find(|arc| net.is_resource(arc.place))
-                })
-                .map(|arc| arc.place)
-        }
+        TransitionType::Wait => net
+            .arcs_of(tid, ArcDir::Input)
+            .find(|arc| infer_resource_kind(net, arc.place) == Some(ResourceKind::Condvar))
+            .map(|arc| arc.place),
         TransitionType::AtomicLoad(..)
         | TransitionType::AtomicStore(..)
         | TransitionType::AtomicCmpXchg(..) => net
@@ -2377,5 +2418,65 @@ mod tests {
             "billing hole violation must be filtered out while global domain.rs type_hole violation is kept: {violations:?}"
         );
         assert_eq!(violations[0]["hole_id"], json!("th_global"));
+    }
+
+    #[test]
+    fn condvar_wait_resolves_condvar_resource_instead_of_mutex() {
+        let mut b = PtBuilder::new();
+        let mtx = b.add_marked_place("Mutex_0", resource_place(Some(1)), 1);
+        let _cv = b.add_marked_place("Condvar:0", resource_place(None), 0);
+        let p0 = b.add_marked_place("p0", control_place(ControlSub::FunctionStart), 1);
+        let p1 = b.add_place("p1", control_place(ControlSub::FunctionEnd));
+
+        let t_wait = b.add_transition("bb2_wait", PtTransitionKind::new(TransitionType::Wait));
+        b.add_input_arc(p0, t_wait, 1);
+        b.add_input_arc(mtx, t_wait, 1);
+        b.add_output_arc(p1, t_wait, 1);
+
+        let (net, m0) = b.build();
+        let sg = build_sg(&net, &m0);
+        let prov = TranslationProvenance {
+            origins: vec![TransOrigin {
+                fn_def_path: "cir_generated::main::cf_consumer".to_string(),
+                bb: 2,
+                span: "src/main.rs:62:34: 62:86 (#0)".to_string(),
+            }],
+            ..TranslationProvenance::default()
+        };
+        let codegen_map = CodegenMap {
+            program: "handoff".to_string(),
+            resources: vec![
+                CodegenResource {
+                    fqn: "main::queue_lock".to_string(),
+                    field: "r0_main_queue_lock".to_string(),
+                    kind: "Mutex".to_string(),
+                },
+                CodegenResource {
+                    fqn: "main::not_empty".to_string(),
+                    field: "r1_main_not_empty".to_string(),
+                    kind: "Condvar".to_string(),
+                },
+            ],
+            ..CodegenMap::default()
+        };
+        let hints = BTreeMap::new();
+        let report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &[],
+        });
+
+        let transitions = report["transitions"].as_array().unwrap();
+        assert_eq!(transitions[0]["op"], "condvar_wait");
+        assert_eq!(transitions[0]["resource"], "main::not_empty");
+        assert_ne!(transitions[0]["resource"], "main::queue_lock");
     }
 }

@@ -156,6 +156,7 @@ impl<'tcx> TransitionKind<'tcx> {
 pub struct NetBuilder<'tcx> {
     inner: unipn::pt::PtBuilder,
     provenance: provenance::TranslationProvenance,
+    cir_channels: std::collections::BTreeMap<String, PlaceId>,
     _tcx: PhantomData<&'tcx ()>,
 }
 
@@ -164,8 +165,26 @@ impl<'tcx> NetBuilder<'tcx> {
         Self {
             inner: unipn::pt::PtBuilder::empty(),
             provenance: provenance::TranslationProvenance::default(),
+            cir_channels: std::collections::BTreeMap::new(),
             _tcx: PhantomData,
         }
+    }
+
+    /// Shared message-buffer place (`initial_tokens = 0`) pairing `cir_sync::channel_send`
+    /// and `cir_sync::channel_recv` transitions on the same channel field.
+    pub fn cir_channel_place(&mut self, key: &str) -> PlaceId {
+        if let Some(&pid) = self.cir_channels.get(key) {
+            return pid;
+        }
+        let pid = self.add_place(
+            format!("Channel:{key}"),
+            0,
+            usize::MAX,
+            PlaceClass::Resource(()),
+            String::new(),
+        );
+        self.cir_channels.insert(key.to_string(), pid);
+        pid
     }
 
     /// Empty place. `capacity == usize::MAX` means unbounded.
