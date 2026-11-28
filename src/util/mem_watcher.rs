@@ -1,4 +1,8 @@
+#[cfg(unix)]
 use libc::pid_t;
+#[cfg(not(unix))]
+#[allow(non_camel_case_types)]
+type pid_t = i32;
 use nom::IResult;
 use nom::Parser;
 use nom::bytes::streaming::tag;
@@ -186,7 +190,7 @@ pub fn statm_task(_process_id: pid_t, _thread_id: pid_t) -> Result<Statm> {
     ))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(all(unix, not(target_os = "linux")))]
 pub fn statm_self() -> Result<Statm> {
     use std::mem::MaybeUninit;
 
@@ -220,4 +224,12 @@ pub fn statm_self() -> Result<Statm> {
         text: 0,
         data: 0,
     })
+}
+
+#[cfg(not(unix))]
+pub fn statm_self() -> Result<Statm> {
+    Err(Error::new(
+        ErrorKind::Unsupported,
+        "statm_self is only available on Unix platforms",
+    ))
 }

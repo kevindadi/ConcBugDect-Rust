@@ -1,11 +1,6 @@
-//! DOT rendering helpers.
-//!
-//! The upstream `unipn::pt::PtNet::to_dot` writes place/transition names and
-//! `Debug` payloads into quoted labels verbatim. Names like
-//! `crate::foo::{closure#0}` and transition types like
-//! `Spawn("std::thread::functions::spawn")` contain `"`, `{}`, `::`, `()` and
-//! other characters that break the DOT grammar, so the analyzer owns a small
-//! escaped exporter here instead.
+//! Escapes place and transition names for DOT labels.
+//! Upstream `to_dot` writes names verbatim and breaks on quotes and braces.
+//! It does not choose which places or transitions exist.
 
 use std::fmt::Write as _;
 use std::io;
@@ -52,7 +47,7 @@ pub fn petri_net_to_dot(net: &PtNet) -> String {
         ));
         let _ = writeln!(out, "  t{i} [label=\"{label}\", shape=box];");
     }
-    for arc in &net.arcs {
+    for arc in net.arcs() {
         match arc.direction {
             ArcDir::Input => {
                 let _ = writeln!(

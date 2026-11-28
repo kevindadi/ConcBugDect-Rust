@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::error::ErrorKind;
 
-use crate::config::{AliasUnknownPolicy, PnConfig, ReportLevel};
+use crate::config::{AliasUnknownPolicy, CondvarModel, LoopSemantics, PnConfig, ReportLevel};
 use clap::{Arg, ArgGroup, Command};
 use rustc_session::EarlyDiagCtxt;
 
@@ -22,16 +22,15 @@ impl Default for CrateNameList {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DetectorKind {
-    All,
     Deadlock,
-    AtomicityViolation,
-    DataRace,
-    PointsTo,
+}
+
+pub fn print_help() {
+    let _ = make_options_parser().print_help();
 }
 
 fn make_options_parser() -> clap::Command {
-    let analysis_help =
-        "Analysis mode: deadlock, datarace, atomic, all, or pointsto (standalone pointer analysis).";
+    let analysis_help = "Analysis mode: deadlock.";
 
     let analysis_arg = Arg::new("analysis_mode")
         .short('m')
@@ -39,15 +38,15 @@ fn make_options_parser() -> clap::Command {
         .help(analysis_help)
         .default_values(&["deadlock"])
         .hide_default_value(true)
-        .value_parser(["deadlock", "datarace", "atomic", "all", "pointsto"]);
+        .value_parser(["deadlock"]);
 
-    let parser = Command::new("pn")
+    let parser = Command::new("spn")
         .no_binary_name(true)
         .version("v0.1.0")
         .arg(analysis_arg)
         .arg(
             Arg::new("diagnostics_output")
-                .long("pn-analysis-dir")
+                .long("spn-analysis-dir")
                 .value_name("PATH")
                 .help("Directory for Petri net analysis outputs")
                 .default_value(DEFAULT_ANALYSIS_DIR),
@@ -56,12 +55,12 @@ fn make_options_parser() -> clap::Command {
             Arg::new("config_file")
                 .long("config")
                 .value_name("FILE")
-                .help("Path to configuration file (default: pn.toml)"),
+                .help("Path to configuration file (default: spn.toml)"),
         )
         .arg(
             Arg::new("target_crate")
                 .short('p')
-                .long("pn-crate")
+                .long("spn-crate")
                 .help("Target crate for analysis (required for cargo; optional for single file)")
                 .default_value("main"),
         )
@@ -161,6 +160,18 @@ fn make_options_parser() -> clap::Command {
                 .value_delimiter(','),
         )
         .arg(
+            Arg::new("cross_crate")
+                .long("spn-cross-crate")
+                .value_name("CRATES")
+                .help(
+                    "Comma-separated dependency crate name prefixes whose lock-bearing \
+                     functions are translated and analysed as part of the target crate \
+                     (workspace-level resource identity; requires their MIR to be \
+                     available to the consumer, e.g. #[inline] or -Zalways-encode-mir)",
+                )
+                .value_delimiter(','),
+        )
+        .arg(
             Arg::new("no_reduce")
                 .long("no-reduce")
                 .help("Disable Petri net reduction before reachability")
@@ -175,7 +186,7 @@ fn make_options_parser() -> clap::Command {
         .arg(
             Arg::new("no_concurrent_roots")
                 .long("no-concurrent-roots")
-                .help("Disable translating functions that use locks/atomics/condvars/channels (and their callees)")
+                .help("Disable translating functions that use locks/atomics/condvars (and their callees)")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
@@ -193,11 +204,150 @@ fn make_options_parser() -> clap::Command {
                 .value_parser(["developer", "research"]),
         )
         .arg(
+            Arg::new("exclude_candidates")
+                .long("exclude-candidates")
+                .value_name("FILE")
+                .help(
+                    "Candidate-level refinements (pn-refinements/1) to exclude from the report; \
+                     read fail-open, report-side only",
+                ),
+        )
+        .arg(
             Arg::new("pta_k")
                 .long("pta-k")
                 .value_name("N")
                 .help("Call-site sensitivity depth (k-CFA) for the pointer-analysis engine (default: 1, 0 = context-insensitive)")
                 .value_parser(clap::value_parser!(usize)),
+        )
+        .arg(
+            Arg::new("slice_max_roots")
+                .long("slice-max-roots")
+                .value_name("N")
+                .help(
+                    "Maximum library roots started per slice (default: 4, 0 = disable \
+                     partitioned slicing); oversized shared-resource groups are split \
+                     while keeping every synchronizing root pair together",
+                )
+                .value_parser(clap::value_parser!(usize)),
+        )
+        .arg(
+            Arg::new("slice_state_budget")
+                .long("slice-state-budget")
+                .value_name("N")
+                .help(
+                    "Total state budget across all library slices (default: unlimited, \
+                     each slice may use --state-limit); slices are explored in partition \
+                     order until the budget is spent and the rest are reported unexplored",
+                )
+                .value_parser(clap::value_parser!(usize)),
+        )
+        .arg(
+            Arg::new("loop_semantics")
+                .long("loop-semantics")
+                .value_name("MODE")
+                .help(
+                    "Cut-back-edge semantics: cut (existing behaviour; default for binaries) or \
+                     summary (loop re-entry, bounded unroll k = loop_summary_k, default 1; \
+                     default for libraries)",
+                )
+                .value_parser(["cut", "summary"]),
+        )
+        .arg(
+            Arg::new("loop_summary_k")
+                .long("loop-summary-k")
+                .value_name("N")
+                .help(
+                    "How many times a loop-summary transition may re-enter its target \
+                     (default: 1; summary semantics only)",
+                )
+                .value_parser(clap::value_parser!(usize)),
+        )
+        .arg(
+            Arg::new("condvar_model")
+                .long("spn-condvar-model")
+                .value_name("MODEL")
+                .help(
+                    "Scenario-level condition-variable model: std (default; std::sync::Condvar \
+                     only), parking_lot (parking_lot::Condvar plus its &mut guard argument \
+                     shape), or all (both). parking_lot/all also enable the waiter-counter \
+                     ordering guard; std keeps the previous nets byte-identical",
+                )
+                .value_parser(["std", "parking_lot", "all"]),
+        )
+        .arg(
+            Arg::new("bool_guard_abstraction")
+                .long("bool-guard-abstraction")
+                .value_name("BOOL")
+                .help(
+                    "Enable boolean guard predicate abstraction for Mutex<bool> condvar loops \
+                     (default: true; false restores the previous unextracted-wait behavior)",
+                )
+                .value_parser(["true", "false"]),
+        )
+        .arg(
+            Arg::new("resource_atomic_partition")
+                .long("resource-atomic-partition")
+                .value_name("MODE")
+                .help(
+                    "Experiment switch; `legacy` is only for comparison runs \
+                     (default: alias, one place per atomic class)",
+                )
+                .value_parser(["alias", "legacy"]),
+        )
+        .arg(
+            Arg::new("resource_lock_grouper")
+                .long("resource-lock-grouper")
+                .value_name("MODE")
+                .help(
+                    "Experiment switch; `ported` is only for comparison runs \
+                     (default: original union-find). `typed` adds the type filter",
+                )
+                .value_parser(["original", "ported", "typed"]),
+        )
+        .arg(
+            Arg::new("dump_resource_map")
+                .long("spn-dump-resource-map")
+                .action(clap::ArgAction::SetTrue)
+                .help(
+                    "Write resources-map.json: the proposed sync-object slots and how they \
+                     differ from the places the current binders built. Does not change the net",
+                ),
+        )
+        .arg(
+            Arg::new("dump_projected_subnets")
+                .long("spn-dump-projected-subnets")
+                .action(clap::ArgAction::SetTrue)
+                .help(
+                    "Also write subnets-projected.json, a subnet summary read back from the \
+                     built net. Off by default; subnets.json stays the recorded summary",
+                ),
+        )
+        .arg(
+            Arg::new("export_concir_net")
+                .long("export-concir-net")
+                .value_name("FILE")
+                .help(
+                    "Export the ConcIR implementation sync Petri net and state graph \
+                     (concir-impl-net/1) to FILE; disables Petri-net reduction for this run",
+                ),
+        )
+        .arg(
+            Arg::new("codegen_map")
+                .long("codegen-map")
+                .value_name("FILE")
+                .help(
+                    "Path to ConcIR codegen.json (with optional hole_ranges / type_hole_ranges) \
+                     for canonical resource mapping and hole purity checks",
+                ),
+        )
+        .arg(
+            Arg::new("focus_module")
+                .long("focus-module")
+                .value_name("MODULE")
+                .help(
+                    "Project concir-impl-net/1 onto MODULE (project observable sync ops outside \
+                     MODULE to silent and filter purity violations to MODULE / its domain types)",
+                ),
         );
     parser
 }
@@ -206,9 +356,21 @@ pub struct Options {
     pub detector_kind: DetectorKind,
     pub output: Option<PathBuf>,
     pub crate_name: String,
+    /// `--exclude-candidates`: candidate-level refinements file.
+    pub exclude_candidates: Option<PathBuf>,
+    /// `--export-concir-net`: write `concir-impl-net/1` JSON at the end of `pipeline::project`.
+    pub export_concir_net: Option<PathBuf>,
+    /// `--codegen-map`: `codegen.json` (plus optional `hole_ranges` / `type_hole_ranges`) for resource mapping and purity checks.
+    pub codegen_map: Option<PathBuf>,
+    /// `--focus-module`: optional ConcIR module name for modular refinement projection.
+    pub focus_module: Option<String>,
     /// Single-file analysis path (`-f`), used for CIR / filtering when set.
     pub input_file: Option<PathBuf>,
     pub crate_filter: CrateNameList,
+    /// Dependency-crate name prefixes translated together with the
+    /// target crate (workspace-level resource identity). Empty by default, so
+    /// single-crate analyses are byte-for-byte unchanged.
+    pub cross_crate: Vec<String>,
     pub dump_options: DumpOptions,
     pub stop_after: StopAfter,
     pub config: PnConfig,
@@ -220,8 +382,13 @@ impl Default for Options {
             detector_kind: DetectorKind::Deadlock,
             output: Option::default(),
             crate_name: String::new(),
+            exclude_candidates: None,
+            export_concir_net: None,
+            codegen_map: None,
+            focus_module: None,
             input_file: None,
             crate_filter: CrateNameList::default(),
+            cross_crate: Vec::new(),
             dump_options: DumpOptions::default(),
             stop_after: StopAfter::None,
             config: PnConfig::default(),
@@ -239,6 +406,10 @@ pub struct DumpOptions {
     pub dump_mir: bool,
     /// Emit `cir.yaml` (concurrency IR) alongside analysis outputs.
     pub dump_cir: bool,
+    /// Also write `subnets-projected.json`. Off by default.
+    pub dump_projected_subnets: bool,
+    /// Write `resources-map.json`. Off by default. Does not change the net.
+    pub dump_resource_map: bool,
 }
 
 /// Pipeline stop point for debugging.
@@ -262,6 +433,8 @@ impl Default for DumpOptions {
             dump_points_to: false,
             dump_mir: false,
             dump_cir: false,
+            dump_projected_subnets: false,
+            dump_resource_map: false,
         }
     }
 }
@@ -289,7 +462,7 @@ impl Options {
                 }
                 // Unknown arguments are rustc flags — skip them and parse what remains.
                 ErrorKind::UnknownArgument => {
-                    log::debug!("Unknown PN arg (skipping, likely rustc arg): {}", e);
+                    log::debug!("Unknown SPN arg (skipping, likely rustc arg): {}", e);
                     make_options_parser()
                         .get_matches_from(pn_args.iter().filter(|s| !s.starts_with('-')))
                 }
@@ -301,10 +474,6 @@ impl Options {
 
         self.detector_kind = match matches.get_one::<String>("analysis_mode").unwrap().as_str() {
             "deadlock" => DetectorKind::Deadlock,
-            "atomic" => DetectorKind::AtomicityViolation,
-            "all" => DetectorKind::All,
-            "datarace" => DetectorKind::DataRace,
-            "pointsto" => DetectorKind::PointsTo,
             _ => DetectorKind::Deadlock,
         };
 
@@ -326,6 +495,19 @@ impl Options {
             .get_one::<String>("diagnostics_output")
             .cloned()
             .map(PathBuf::from);
+        self.exclude_candidates = matches
+            .get_one::<String>("exclude_candidates")
+            .cloned()
+            .map(PathBuf::from);
+        self.export_concir_net = matches
+            .get_one::<String>("export_concir_net")
+            .cloned()
+            .map(PathBuf::from);
+        self.codegen_map = matches
+            .get_one::<String>("codegen_map")
+            .cloned()
+            .map(PathBuf::from);
+        self.focus_module = matches.get_one::<String>("focus_module").cloned();
 
         self.dump_options = DumpOptions {
             dump_call_graph: matches.get_flag("dump_callgraph"),
@@ -335,6 +517,8 @@ impl Options {
             dump_points_to: matches.get_flag("dump_points_to"),
             dump_mir: matches.get_flag("dump_mir"),
             dump_cir: matches.get_flag("dump_cir"),
+            dump_projected_subnets: matches.get_flag("dump_projected_subnets"),
+            dump_resource_map: matches.get_flag("dump_resource_map"),
         };
 
         self.stop_after = match matches.get_one::<String>("stop_after") {
@@ -352,7 +536,7 @@ impl Options {
         let config_path = matches
             .get_one::<String>("config_file")
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("pn.toml"));
+            .unwrap_or_else(|| PathBuf::from("spn.toml"));
 
         match PnConfig::load_from_file(&config_path) {
             Ok(cfg) => self.config = cfg,
@@ -372,7 +556,13 @@ impl Options {
         } else if let Some(crates) = matches.get_many::<String>("crate_blacklist") {
             self.crate_filter = CrateNameList::Black(crates.cloned().collect());
         }
-        if matches.get_flag("no_reduce") {
+        if let Some(crates) = matches.get_many::<String>("cross_crate") {
+            self.cross_crate = crates
+                .map(|name| name.replace('-', "_"))
+                .filter(|name| !name.is_empty())
+                .collect();
+        }
+        if matches.get_flag("no_reduce") || self.export_concir_net.is_some() {
             self.config.reduce_net = false;
         }
         if matches.get_flag("por") {
@@ -396,16 +586,90 @@ impl Options {
         if let Some(&k) = matches.get_one::<usize>("pta_k") {
             self.config.pta_k = k;
         }
+        if let Some(&cap) = matches.get_one::<usize>("slice_max_roots") {
+            self.config.slice_max_roots = if cap == 0 { None } else { Some(cap) };
+        }
+        if let Some(&budget) = matches.get_one::<usize>("slice_state_budget") {
+            self.config.slice_state_budget = if budget == 0 { None } else { Some(budget) };
+        }
+        if let Some(mode) = matches.get_one::<String>("resource_atomic_partition") {
+            if let Some(parsed) = crate::config::PartitionSwitch::parse(mode) {
+                self.config.resource_atomic_partition = parsed;
+            }
+        }
+        if let Some(mode) = matches.get_one::<String>("resource_lock_grouper") {
+            if let Some(parsed) = crate::config::LockGrouper::parse(mode) {
+                self.config.resource_lock_grouper = parsed;
+            }
+        }
+        if let Some(mode) = matches.get_one::<String>("loop_semantics") {
+            self.config.loop_semantics = Some(match mode.as_str() {
+                "summary" => LoopSemantics::Summary,
+                _ => LoopSemantics::Cut,
+            });
+        }
+        if let Some(&k) = matches.get_one::<usize>("loop_summary_k") {
+            self.config.loop_summary_k = k;
+        }
+        if let Some(model) = matches.get_one::<String>("condvar_model") {
+            self.config.condvar_model = match model.as_str() {
+                "parking_lot" => CondvarModel::ParkingLot,
+                "all" => CondvarModel::All,
+                _ => CondvarModel::Std,
+            };
+        }
+        if let Some(val) = matches.get_one::<String>("bool_guard_abstraction") {
+            self.config.bool_guard_abstraction = val == "true";
+        }
+
+        // Cargo package names may contain `-`; rustc def paths use `_`.
+        // Normalize once here so crate filtering and the output directory
+        // agree with `targets_current_crate`.
+        self.crate_name = self.crate_name.replace('-', "_");
 
         rustc_args.to_vec()
     }
 
     pub fn targets_current_crate(&self, current_crate_name: &str) -> bool {
-        fn normalize(name: &str) -> String {
-            name.replace('-', "_")
-        }
+        self.crate_name == current_crate_name
+    }
 
-        normalize(&self.crate_name) == normalize(current_crate_name)
+    /// Whether `func_name` (a rustc `def_path_str`) belongs to the target crate,
+    /// a `--spn-cross-crate` dependency, and is not excluded by the crate filter.
+    ///
+    /// The include/exclude lists are matched as stored. Only `crate_name` is
+    /// hyphen-normalized, and that happens in [`Self::parse_from_args`].
+    pub fn crate_filter_match(&self, func_name: &str) -> bool {
+        let include = match &self.crate_filter {
+            CrateNameList::White(list) if !list.is_empty() => {
+                list.iter().any(|c| func_name.starts_with(c))
+            }
+            _ => func_name.starts_with(&self.crate_name),
+        };
+        let exclude = match &self.crate_filter {
+            CrateNameList::Black(list) if !list.is_empty() => {
+                list.iter().any(|c| func_name.starts_with(c))
+            }
+            _ => false,
+        };
+        // `--spn-cross-crate` widens the reachable translation set to
+        // the named dependency crates, so their lock-using frames become
+        // part of the net.
+        (include || self.cross_crate_matches(func_name)) && !exclude
+    }
+
+    /// Whether `func_name` (a rustc `def_path_str`) belongs to one of
+    /// the dependency crates listed by `--spn-cross-crate`. The match is
+    /// crate-boundary aware, so `ws_lib` covers `ws_lib::Ledger::transfer` but
+    /// not the unrelated crate `ws_library::...` (a plain `starts_with` would
+    /// silently pull that crate in as well).
+    pub fn cross_crate_matches(&self, func_name: &str) -> bool {
+        self.cross_crate.iter().any(|prefix| {
+            func_name == prefix
+                || func_name
+                    .strip_prefix(prefix.as_str())
+                    .is_some_and(|rest| rest.starts_with("::"))
+        })
     }
 
     pub fn analysis_output_dir(&self) -> PathBuf {
@@ -456,6 +720,46 @@ mod tests {
     }
 
     #[test]
+    fn parses_slice_state_budget_flag() {
+        let mut options = Options::default();
+        options.parse_from_args(&["--slice-state-budget".to_string(), "50000".to_string()]);
+        assert_eq!(options.config.slice_state_budget, Some(50000));
+
+        let mut options = Options::default();
+        options.parse_from_args(&["--slice-state-budget".to_string(), "0".to_string()]);
+        assert_eq!(options.config.slice_state_budget, None);
+    }
+
+    #[test]
+    fn parses_loop_semantics_flag() {
+        let mut options = Options::default();
+        options.parse_from_args(&["--loop-semantics".to_string(), "summary".to_string()]);
+        assert_eq!(options.config.loop_semantics, Some(LoopSemantics::Summary));
+
+        let mut options = Options::default();
+        options.parse_from_args(&["--loop-semantics".to_string(), "cut".to_string()]);
+        assert_eq!(options.config.loop_semantics, Some(LoopSemantics::Cut));
+    }
+
+    #[test]
+    fn parses_loop_summary_k_flag() {
+        let mut options = Options::default();
+        options.parse_from_args(&[
+            "--loop-semantics".to_string(),
+            "summary".to_string(),
+            "--loop-summary-k".to_string(),
+            "3".to_string(),
+        ]);
+        assert_eq!(options.config.loop_semantics, Some(LoopSemantics::Summary));
+        assert_eq!(options.config.loop_summary_k, 3);
+        // The flag alone leaves the semantics at the per-entry-mode default.
+        let mut options = Options::default();
+        options.parse_from_args(&["--loop-summary-k".to_string(), "2".to_string()]);
+        assert_eq!(options.config.loop_semantics, None);
+        assert_eq!(options.config.loop_summary_k, 2);
+    }
+
+    #[test]
     fn matches_only_the_target_crate() {
         let options = Options {
             crate_name: "dr_1".to_string(),
@@ -467,26 +771,189 @@ mod tests {
     }
 
     #[test]
-    fn normalizes_hyphenated_cargo_package_names() {
+    fn parses_cross_crate_prefixes() {
+        let mut options = Options::default();
+        options.parse_from_args(&[
+            "--spn-cross-crate".to_string(),
+            "ws_lib,ledger_util".to_string(),
+        ]);
+        assert_eq!(options.cross_crate, vec!["ws_lib", "ledger_util"]);
+        assert_eq!(Options::default().cross_crate, Vec::<String>::new());
+    }
+
+    #[test]
+    fn cross_crate_matching_stops_at_crate_boundaries() {
+        // `--spn-cross-crate ws_lib` must cover the dependency's
+        // functions but not an unrelated crate whose name merely shares the
+        // prefix (`ws_library`). The boundary is `::` (or an exact name).
         let options = Options {
-            crate_name: "my-crate".to_string(),
+            cross_crate: vec!["ws_lib".to_string()],
             ..Options::default()
         };
 
-        assert!(options.targets_current_crate("my_crate"));
+        assert!(options.cross_crate_matches("ws_lib"));
+        assert!(options.cross_crate_matches("ws_lib::Ledger::transfer"));
+        assert!(options.cross_crate_matches("ws_lib::{impl#1}::transfer"));
+        assert!(!options.cross_crate_matches("ws_library::Ledger::transfer"));
+        assert!(!options.cross_crate_matches("ws_lib_extra"));
+        assert!(!options.cross_crate_matches("ws"));
+        assert!(!Options::default().cross_crate_matches("ws_lib::anything"));
+    }
+
+    #[test]
+    fn normalizes_hyphenated_cargo_package_names() {
+        let mut options = Options::default();
+        options.parse_from_args(&["-p".to_string(), "foo-bar".to_string()]);
+
+        assert_eq!(options.crate_name, "foo_bar");
+        assert!(options.targets_current_crate("foo_bar"));
+    }
+
+    #[test]
+    fn hyphenated_crate_name_matches_rustc_def_path() {
+        let mut options = Options::default();
+        options.parse_from_args(&["-p".to_string(), "foo-bar".to_string()]);
+
+        assert!(options.crate_filter_match("foo_bar::f"));
+    }
+
+    #[test]
+    fn analysis_output_dir_normalizes_hyphenated_crate_name() {
+        let mut options = Options::default();
+        options.parse_from_args(&[
+            "-p".to_string(),
+            "foo-bar".to_string(),
+            "--spn-analysis-dir".to_string(),
+            "./tmp".to_string(),
+        ]);
+
+        assert_eq!(
+            options.analysis_output_dir(),
+            PathBuf::from("./tmp/foo_bar")
+        );
     }
 
     #[test]
     fn analysis_output_dir_uses_target_crate_name() {
         let options = Options {
             crate_name: "dr_1".to_string(),
-            output: Some(PathBuf::from("./tmp/pn-tests")),
+            output: Some(PathBuf::from("./tmp/spn-tests")),
             ..Options::default()
         };
 
         assert_eq!(
             options.analysis_output_dir(),
-            PathBuf::from("./tmp/pn-tests/dr_1")
+            PathBuf::from("./tmp/spn-tests/dr_1")
         );
+    }
+
+    #[test]
+    fn parses_bool_guard_abstraction_flag() {
+        let options = Options::default();
+        assert!(options.config.bool_guard_abstraction);
+
+        let mut options = Options::default();
+        options.parse_from_args(&["--bool-guard-abstraction".to_string(), "false".to_string()]);
+        assert!(!options.config.bool_guard_abstraction);
+
+        let mut options = Options::default();
+        options.parse_from_args(&["--bool-guard-abstraction".to_string(), "true".to_string()]);
+        assert!(options.config.bool_guard_abstraction);
+    }
+
+    #[test]
+    fn partition_switches_default_to_alias_and_original_and_cli_overrides_the_file() {
+        use crate::config::{LockGrouper, PartitionSwitch};
+
+        let defaults = crate::config::PnConfig::default();
+        assert_eq!(defaults.resource_atomic_partition, PartitionSwitch::Alias);
+        assert_eq!(defaults.resource_lock_grouper, LockGrouper::Original);
+
+        let mut help = Vec::new();
+        make_options_parser().write_help(&mut help).unwrap();
+        let help = String::from_utf8(help).unwrap();
+        assert!(help.contains("--resource-atomic-partition"));
+        assert!(help.contains("--resource-lock-grouper"));
+        assert!(help.contains("comparison runs"));
+        assert!(!help.contains("resource-unsafe-partition"));
+
+        let mut options = Options::default();
+        options.parse_from_args(&[
+            "--resource-atomic-partition".to_string(),
+            "legacy".to_string(),
+        ]);
+        assert_eq!(
+            options.config.resource_atomic_partition,
+            PartitionSwitch::Legacy
+        );
+        assert_eq!(options.config.resource_lock_grouper, LockGrouper::Original);
+
+        let path = std::env::temp_dir().join(format!("spn-r44-{}.toml", std::process::id()));
+        std::fs::write(
+            &path,
+            "resource_atomic_partition = \"legacy\"\nresource_lock_grouper = \"ported\"\n",
+        )
+        .unwrap();
+        let mut from_file = Options::default();
+        from_file.parse_from_args(&["--config".to_string(), path.display().to_string()]);
+        assert_eq!(
+            from_file.config.resource_atomic_partition,
+            PartitionSwitch::Legacy
+        );
+        assert_eq!(from_file.config.resource_lock_grouper, LockGrouper::Ported);
+
+        let mut options = Options::default();
+        options.parse_from_args(&[
+            "--config".to_string(),
+            path.display().to_string(),
+            "--resource-atomic-partition".to_string(),
+            "alias".to_string(),
+            "--resource-lock-grouper".to_string(),
+            "original".to_string(),
+        ]);
+        assert_eq!(
+            options.config.resource_atomic_partition,
+            PartitionSwitch::Alias
+        );
+        assert_eq!(options.config.resource_lock_grouper, LockGrouper::Original);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parses_export_concir_net_and_codegen_map_flags() {
+        let mut options = Options::default();
+        assert_eq!(options.export_concir_net, None);
+        assert_eq!(options.codegen_map, None);
+        assert!(options.config.reduce_net);
+
+        options.parse_from_args(&[
+            "--export-concir-net".to_string(),
+            "out/impl_net.json".to_string(),
+            "--codegen-map".to_string(),
+            "out/codegen.json".to_string(),
+        ]);
+
+        assert_eq!(
+            options.export_concir_net,
+            Some(PathBuf::from("out/impl_net.json"))
+        );
+        assert_eq!(
+            options.codegen_map,
+            Some(PathBuf::from("out/codegen.json"))
+        );
+        assert!(
+            !options.config.reduce_net,
+            "--export-concir-net must disable Petri-net reduction"
+        );
+        assert_eq!(options.focus_module, None);
+
+        let mut focused = Options::default();
+        focused.parse_from_args(&[
+            "--export-concir-net".to_string(),
+            "out/impl_net.json".to_string(),
+            "--focus-module".to_string(),
+            "orders".to_string(),
+        ]);
+        assert_eq!(focused.focus_module.as_deref(), Some("orders"));
     }
 }

@@ -83,7 +83,7 @@ fn generate_mir_dot<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, body: &Body<'tcx>) -
 
         if let Some(term) = &bb.terminator {
             match &term.kind {
-                TerminatorKind::Goto { target } => {
+                TerminatorKind::Goto { target, .. } => {
                     let to_id = format!("bb{}", target.index());
                     let _ = writeln!(&mut dot, "    {} -> {};", from_id, to_id);
                 }
@@ -133,7 +133,7 @@ fn generate_mir_dot<'tcx>(tcx: TyCtxt<'tcx>, def_id: DefId, body: &Body<'tcx>) -
 
 fn format_statement(stmt: &Statement<'_>) -> String {
     match &stmt.kind {
-        rustc_middle::mir::StatementKind::Assign(box (place, rvalue)) => {
+        rustc_middle::mir::StatementKind::Assign((place, rvalue)) => {
             format!("{:?} = {:?}", place, rvalue)
         }
         rustc_middle::mir::StatementKind::FakeRead(..) => "FakeRead".to_string(),
@@ -153,7 +153,7 @@ fn format_statement(stmt: &Statement<'_>) -> String {
 
 fn format_terminator(term: &Terminator<'_>) -> String {
     match &term.kind {
-        TerminatorKind::Goto { target } => format!("goto BB{}", target.index()),
+        TerminatorKind::Goto { target, .. } => format!("goto BB{}", target.index()),
         TerminatorKind::SwitchInt { targets, .. } => {
             format!("switch ({} targets)", targets.all_targets().len())
         }
