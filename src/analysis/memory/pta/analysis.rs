@@ -1163,16 +1163,15 @@ impl<'tcx> PointerAnalysis<'tcx> {
         // the precise executions do not have. When a precise shared context
         // resolves both sides, the fallback context is not evidence about
         // these particular executions.
-        let precise_exists = a.iter().any(|(ctx, sa)| {
-            !ctx.is_empty() && !sa.is_empty() && b_by_ctx.get(ctx).is_some_and(|sb| !sb.is_empty())
-        });
+        let a_has_precise = a.iter().any(|(ctx, sa)| !ctx.is_empty() && !sa.is_empty());
+        let b_has_precise = b.iter().any(|(ctx, sb)| !ctx.is_empty() && !sb.is_empty());
         let mut shared = 0usize;
         let mut unresolved = false;
         for (ctx, sa) in a {
             let Some(sb) = b_by_ctx.get(ctx) else {
                 continue;
             };
-            if ctx.is_empty() && precise_exists {
+            if ctx.is_empty() && (a_has_precise || b_has_precise) {
                 continue;
             }
             // A context where *neither* receiver resolves carries no alias
@@ -1590,6 +1589,20 @@ mod tests {
         assert_eq!(
             PtaAnalysis::classify_by_context(&a, &b, |x, y| x == y),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn different_precise_contexts_ignore_empty_root_frame() {
+        // Under k >= 1, spawned worker functions live in distinct call-site
+        // contexts and are also built as Context::empty() roots where formal
+        // params are unbound. Skipping the synthetic empty frame lets the
+        // caller fall back to collapsed points-to (where Heap nodes overlap).
+        let a = per_ctx(&[(ctx(1, 2), &[10, 100]), (Context::empty(), &[100])]);
+        let b = per_ctx(&[(ctx(3, 4), &[10, 200]), (Context::empty(), &[200])]);
+        assert_eq!(
+            PtaAnalysis::classify_by_context(&a, &b, |x, y| x == y),
+            None
         );
     }
 
