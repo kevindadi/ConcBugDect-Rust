@@ -386,6 +386,7 @@ pub fn builtin_sync_ops() -> Vec<SyncOp> {
             &[
                 "cir_trace::Semaphore::acquire",
                 "cir_trace::Semaphore::acquire_sid",
+                "CountingSemaphore::acquire",
             ],
             "sem_acquire",
         ),
@@ -393,6 +394,7 @@ pub fn builtin_sync_ops() -> Vec<SyncOp> {
             &[
                 "cir_trace::Semaphore::release",
                 "cir_trace::Semaphore::release_sid",
+                "CountingSemaphore::release",
             ],
             "sem_release",
         ),
@@ -400,6 +402,9 @@ pub fn builtin_sync_ops() -> Vec<SyncOp> {
             &[
                 "cir_trace::Channel::send",
                 "cir_trace::Channel::send_sid",
+                "MpscChannel::send",
+                "std::sync::mpsc::Sender::send",
+                "std::sync::mpsc::SyncSender::send",
             ],
             "channel_send",
         ),
@@ -407,6 +412,8 @@ pub fn builtin_sync_ops() -> Vec<SyncOp> {
             &[
                 "cir_trace::Channel::recv",
                 "cir_trace::Channel::recv_sid",
+                "MpscChannel::recv",
+                "std::sync::mpsc::Receiver::recv",
             ],
             "channel_recv",
         ),
@@ -425,6 +432,8 @@ pub fn builtin_sync_ops() -> Vec<SyncOp> {
                 "cir_trace::SyncVar::write",
                 "cir_trace::Semaphore::new",
                 "cir_trace::Channel::new",
+                "MpscChannel::new",
+                "CountingSemaphore::new",
             ],
             "silent",
         ),
@@ -538,5 +547,31 @@ mod tests {
             .lookup("core::sync::atomic::AtomicI64::load")
             .expect("AtomicI64::load");
         assert_eq!(i64_load.resource, Some(SyncResource::Atomic));
+
+        let mpsc_send = reg
+            .lookup("cir_generated::MpscChannel::<i64>::send")
+            .expect("MpscChannel::send");
+        assert_eq!(mpsc_send.effect, SyncEffect::Summary);
+        assert_eq!(
+            mpsc_send.summary.as_ref().map(|s| s.kind.as_str()),
+            Some("channel_send")
+        );
+
+        let mpsc_recv = reg
+            .lookup("cir_generated::MpscChannel::<i64>::recv")
+            .expect("MpscChannel::recv");
+        assert_eq!(mpsc_recv.effect, SyncEffect::Summary);
+        assert_eq!(
+            mpsc_recv.summary.as_ref().map(|s| s.kind.as_str()),
+            Some("channel_recv")
+        );
+
+        let cs_acq = reg
+            .lookup("cir_generated::CountingSemaphore::acquire")
+            .expect("CountingSemaphore::acquire");
+        assert_eq!(
+            cs_acq.summary.as_ref().map(|s| s.kind.as_str()),
+            Some("sem_acquire")
+        );
     }
 }

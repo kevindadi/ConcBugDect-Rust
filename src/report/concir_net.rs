@@ -88,10 +88,32 @@ pub struct HoleRange {
     pub end_line: usize,
 }
 
-/// Subset of ConcIR `codegen.json` (plus optional `hole_ranges` / `type_hole_ranges`
-/// produced after filling holes) consumed by `--codegen-map`.
+/// One function-anchor entry from ConcIR `codegen.json` (`--mode anchor`).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct CodegenFnHole {
+    pub id: String,
+    #[serde(default)]
+    pub module: Option<String>,
+    #[serde(default)]
+    pub function: String,
+    #[serde(default)]
+    pub fqn: String,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub start_line: Option<usize>,
+    #[serde(default)]
+    pub end_line: Option<usize>,
+    #[serde(default)]
+    pub req: Vec<String>,
+}
+
+/// Subset of ConcIR `codegen.json` (plus optional `hole_ranges` / `fn_hole_ranges`
+/// / `type_hole_ranges` produced after filling holes) consumed by `--codegen-map`.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct CodegenMap {
+    #[serde(default)]
+    pub mode: String,
     #[serde(default)]
     pub program: String,
     #[serde(default)]
@@ -100,6 +122,10 @@ pub struct CodegenMap {
     pub holes: Vec<CodegenHole>,
     #[serde(default)]
     pub hole_ranges: BTreeMap<String, HoleRange>,
+    #[serde(default)]
+    pub fn_holes: Vec<CodegenFnHole>,
+    #[serde(default)]
+    pub fn_hole_ranges: BTreeMap<String, HoleRange>,
     #[serde(default)]
     pub type_holes: Vec<CodegenTypeHole>,
     #[serde(default)]
@@ -199,7 +225,8 @@ impl CodegenMap {
         ranges.into_iter().collect()
     }
 
-    /// Find the hole whose inclusive line range contains `span`, if any.
+    /// Find the strict purity hole (`holes`/`type_holes`) whose inclusive line range
+    /// contains `span`, if any.
     pub fn hole_for_span(&self, span: &str) -> Option<String> {
         let (span_file, span_line) = parse_span_file_line(span)?;
         for (hole_id, range) in self.effective_hole_ranges() {
@@ -211,6 +238,56 @@ impl CodegenMap {
             }
         }
         None
+    }
+
+    /// All effective `fn_holes` ranges: explicit `fn_hole_ranges` take priority,
+    /// falling back to `start_line..=end_line` on `fn_holes`.
+    pub fn effective_fn_hole_ranges(&self) -> Vec<(String, HoleRange)> {
+        let mut ranges: BTreeMap<String, HoleRange> = self.fn_hole_ranges.clone();
+        for fh in &self.fn_holes {
+            if ranges.contains_key(&fh.id) {
+                continue;
+            }
+            let file = fh
+                .file
+                .clone()
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| "src/main.rs".to_string());
+            if let (Some(start), Some(end)) = (fh.start_line, fh.end_line)
+                && start > 0
+                && end >= start
+            {
+                ranges.insert(
+                    fh.id.clone(),
+                    HoleRange {
+                        file,
+                        start_line: start,
+                        end_line: end,
+                    },
+                );
+            }
+        }
+        ranges.into_iter().collect()
+    }
+
+    /// Find the `fn_hole` anchor whose inclusive line range contains `span`, if any.
+    pub fn fn_hole_for_span(&self, span: &str) -> Option<String> {
+        let (span_file, span_line) = parse_span_file_line(span)?;
+        for (anchor_id, range) in self.effective_fn_hole_ranges() {
+            if span_line >= range.start_line
+                && span_line <= range.end_line
+                && files_match(&span_file, &range.file)
+            {
+                return Some(anchor_id);
+            }
+        }
+        None
+    }
+
+    /// Find either a strict hole or a function anchor whose range contains `span`.
+    pub fn anchor_for_span(&self, span: &str) -> Option<String> {
+        self.hole_for_span(span)
+            .or_else(|| self.fn_hole_for_span(span))
     }
 
     /// Map a raw resource name (or MIR field hint / resource kind) to a
@@ -390,8 +467,11 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
                 String::new()
             };
 
-            let hole_id = codegen_map.and_then(|map| map.hole_for_span(&span));
-            if raw_observable && let Some(ref hid) = hole_id {
+            let strict_hole_id = codegen_map.and_then(|map| map.hole_for_span(&span));
+            let hole_id = strict_hole_id
+                .clone()
+                .or_else(|| codegen_map.and_then(|map| map.fn_hole_for_span(&span)));
+            if raw_observable && let Some(ref hid) = strict_hole_id {
                 purity_violations.push(PurityViolation {
                     hole_id: hid.clone(),
                     fn_def_path: fn_def_path.clone(),
@@ -453,11 +533,11 @@ pub fn build_concir_net(inputs: &ConcirNetInputs<'_>) -> Value {
         })
         .collect();
 
-    // 3. Cut loop back-edges and MIR unsafe spans inside hole / type-hole ranges.
+    // 3. Cut loop back-edges and MIR unsafe spans inside hole / fn-hole / type-hole ranges.
     if let Some(map) = codegen_map {
         collect_loop_purity_violations(prov, map, &mut purity_violations);
         for (fn_def_path, span) in inputs.unsafe_spans {
-            if let Some(hid) = map.hole_for_span(span)
+            if let Some(hid) = map.anchor_for_span(span)
                 && seen_unsafe_violations.insert((hid.clone(), span.clone()))
             {
                 purity_violations.push(PurityViolation {
@@ -1091,7 +1171,7 @@ fn collect_transition_unsafe_violations(
                 trans_span
             };
             let hid = codegen_map
-                .hole_for_span(effective_span)
+                .anchor_for_span(effective_span)
                 .or_else(|| trans_hole_id.map(str::to_string));
             if let Some(hid) = hid
                 && seen.insert((hid.clone(), effective_span.to_string()))
@@ -1121,7 +1201,7 @@ fn collect_transition_unsafe_violations(
                 } else {
                     trans_span
                 };
-                if let Some(hid) = codegen_map.hole_for_span(effective_span) {
+                if let Some(hid) = codegen_map.anchor_for_span(effective_span) {
                     recorded_any = true;
                     if seen.insert((hid.clone(), effective_span.to_string())) {
                         let op = if uop.is_write {
@@ -1240,6 +1320,31 @@ fn purity_violation_matches_focus(
                 let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
                 return files_match(file, &expected) || file_is_domain_rs(file);
             }
+        }
+        if let Some(fh) = map.fn_holes.iter().find(|fh| fh.id == pv.hole_id) {
+            if let Some(ref m) = fh.module
+                && !m.is_empty()
+            {
+                return module_names_match(m, focus_module);
+            }
+            if let Some((owner, _)) = fh.fqn.split_once("::") {
+                return module_names_match(owner, focus_module);
+            }
+            if let Some(ref file) = fh.file
+                && !file.is_empty()
+            {
+                let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+                return files_match(file, &expected) || file_is_domain_rs(file);
+            }
+        }
+        if let Some(range) = map.fn_hole_ranges.get(&pv.hole_id)
+            && !range.file.is_empty()
+        {
+            let expected = format!("src/{}.rs", sanitize_mod_ident(focus_module));
+            if files_match(&range.file, &expected) || file_is_domain_rs(&range.file) {
+                return true;
+            }
+            return fn_in_module(&pv.fn_def_path, focus_module, crate_name);
         }
         if let Some(th) = map.type_holes.iter().find(|t| t.id == pv.hole_id) {
             if let Some(ref m) = th.module
@@ -1600,6 +1705,7 @@ mod tests {
             hole_ranges: BTreeMap::new(),
             type_holes: vec![],
             type_hole_ranges: BTreeMap::new(),
+            ..CodegenMap::default()
         };
 
         let subnets = vec![
@@ -1770,6 +1876,7 @@ mod tests {
             hole_ranges,
             type_holes: vec![],
             type_hole_ranges: BTreeMap::new(),
+            ..CodegenMap::default()
         };
 
         let mut hints = BTreeMap::new();
@@ -2228,6 +2335,7 @@ mod tests {
                 req: vec!["R9".to_string()],
             }],
             type_hole_ranges,
+            ..CodegenMap::default()
         };
 
         let unsafe_spans = vec![(
@@ -2379,6 +2487,7 @@ mod tests {
                 ..CodegenTypeHole::default()
             }],
             type_hole_ranges: BTreeMap::new(),
+            ..CodegenMap::default()
         };
 
         let hints = BTreeMap::new();
@@ -2478,5 +2587,122 @@ mod tests {
         assert_eq!(transitions[0]["op"], "condvar_wait");
         assert_eq!(transitions[0]["resource"], "main::not_empty");
         assert_ne!(transitions[0]["resource"], "main::queue_lock");
+    }
+
+    #[test]
+    fn anchor_fn_holes_allow_sync_ops_and_catch_unsafe() {
+        let mut b = PtBuilder::new();
+        let p0 = b.add_marked_place("main_bb0", control_place(ControlSub::BasicBlock), 1);
+        let p1 = b.add_place("main_bb1", control_place(ControlSub::BasicBlock));
+        let p2 = b.add_place("main_bb2", control_place(ControlSub::BasicBlock));
+        let m_place = b.add_marked_place("Mutex_0", resource_place(Some(1)), 1);
+
+        let t_lock = b.add_transition(
+            "cir_sync::mutex_lock::r0_main_m",
+            PtTransitionKind::new(TransitionType::Lock(m_place.index())),
+        );
+        b.add_input_arc(p0, t_lock, 1);
+        b.add_input_arc(m_place, t_lock, 1);
+        b.add_output_arc(p1, t_lock, 1);
+
+        let t_unlock = b.add_transition(
+            "cir_sync::mutex_unlock::r0_main_m",
+            PtTransitionKind::new(TransitionType::Unlock(m_place.index())),
+        );
+        b.add_input_arc(p1, t_unlock, 1);
+        b.add_output_arc(p2, t_unlock, 1);
+        b.add_output_arc(m_place, t_unlock, 1);
+
+        let (net, m0) = b.build();
+        let sg = build_sg(&net, &m0);
+
+        let prov = TranslationProvenance {
+            origins: vec![
+                TransOrigin {
+                    fn_def_path: "cir_generated::main::cf_worker".to_string(),
+                    bb: 1,
+                    span: "src/main.rs:25:5: 25:30 (#0)".to_string(),
+                },
+                TransOrigin {
+                    fn_def_path: "cir_generated::main::cf_worker".to_string(),
+                    bb: 2,
+                    span: "src/main.rs:27:5: 27:20 (#0)".to_string(),
+                },
+            ],
+            ..TranslationProvenance::default()
+        };
+
+        let mut fn_hole_ranges = BTreeMap::new();
+        fn_hole_ranges.insert(
+            "fn_main_worker".to_string(),
+            HoleRange {
+                file: "src/main.rs".to_string(),
+                start_line: 22,
+                end_line: 30,
+            },
+        );
+        let codegen_map = CodegenMap {
+            mode: "anchor".to_string(),
+            program: "anchor_demo".to_string(),
+            resources: vec![CodegenResource {
+                fqn: "main::m".to_string(),
+                field: "r0_main_m".to_string(),
+                kind: "Mutex".to_string(),
+            }],
+            fn_holes: vec![CodegenFnHole {
+                id: "fn_main_worker".to_string(),
+                module: Some("main".to_string()),
+                function: "worker".to_string(),
+                fqn: "main::worker".to_string(),
+                file: Some("src/main.rs".to_string()),
+                start_line: Some(22),
+                end_line: Some(30),
+                req: vec!["R1".to_string()],
+            }],
+            fn_hole_ranges,
+            ..CodegenMap::default()
+        };
+
+        let hints = BTreeMap::new();
+        let clean_report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &[],
+        });
+        assert!(
+            clean_report["purity_violations"].as_array().unwrap().is_empty(),
+            "sync ops inside anchor fn_holes must not trigger sync_in_hole: {clean_report}"
+        );
+        assert_eq!(clean_report["transitions"][0]["hole_id"], "fn_main_worker");
+
+        let unsafe_spans = vec![(
+            "cir_generated::main::cf_worker".to_string(),
+            "src/main.rs:26:9: 26:25 (#0)".to_string(),
+        )];
+        let unsafe_report = build_concir_net(&ConcirNetInputs {
+            crate_name: "cir_generated",
+            entry_mode: "main",
+            net: &net,
+            initial_marking: &m0,
+            state_graph: &sg,
+            provenance: &prov,
+            subnets: &[],
+            codegen_map: Some(&codegen_map),
+            place_field_hints: &hints,
+            focus_module: None,
+            unsafe_spans: &unsafe_spans,
+        });
+        let pvs = unsafe_report["purity_violations"].as_array().unwrap();
+        assert_eq!(pvs.len(), 1);
+        assert_eq!(pvs[0]["kind"], "unsafe_in_hole");
+        assert_eq!(pvs[0]["hole_id"], "fn_main_worker");
     }
 }
